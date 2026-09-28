@@ -123,10 +123,27 @@ def source_checks(root: Path) -> list[Check]:
     trap_pos = patch.find("static void InvalidFunctionTrap")
     trap_chunk = patch[trap_pos:trap_pos + 500] if trap_pos >= 0 else ""
     fail_fast = "REX_FATAL" in trap_chunk and "last_indirect_target" in trap_chunk
-    add_check(checks, "SRC-SDK-PATCH", bool(patch) and not dirty_gitlink and fail_fast,
-        "SDK patch keeps invalid indirect dispatch fail-fast and has no dirty gitlinks",
+    data_scanner = (
+        "void dataSectionFunctionPointerScan(CodegenContext& ctx)" in patch
+        and "+  dataSectionFunctionPointerScan(ctx);" in patch
+        and "graph.addFunction(value, 4, FunctionAuthority::VTABLE, true);" in patch
+    )
+    unsafe_scanner_enabled = bool(
+        re.search(r"^\+\s*functionPointerScan\(ctx\);\s*$", patch, re.M)
+    )
+    graph_invariants = (
+        "FunctionAuthority::VTABLE" in patch
+        and "dataSectionFunctionPointerScan" in patch
+    )
+    add_check(checks, "SRC-SDK-PATCH",
+        bool(patch) and not dirty_gitlink and fail_fast and data_scanner
+        and not unsafe_scanner_enabled and graph_invariants,
+        "SDK patch: fail-fast dispatch, conservative data-section scanner, no dirty gitlinks",
         [*(["patch contains non-reproducible 'Subproject commit ...-dirty'"] if dirty_gitlink else []),
-         *(["InvalidFunctionTrap fail-fast invariant not found"] if not fail_fast else [])])
+         *(["InvalidFunctionTrap fail-fast invariant not found"] if not fail_fast else []),
+         *(["data-section function-pointer scanner missing/incomplete"] if not data_scanner else []),
+         *(["unsafe generic functionPointerScan(ctx) was enabled"] if unsafe_scanner_enabled else []),
+         *(["function-graph scanner invariants not found"] if not graph_invariants else [])])
 
     app_path, hooks_path = root / "src" / "dantes_inferno_app.h", root / "src" / "dantes_inferno_hooks.h"
     app = read_text(app_path) if app_path.exists() else ""
@@ -173,13 +190,19 @@ def generated_checks(root: Path, required: bool) -> list[Check]:
     missing = sorted(seed_set - registered)
     all_generated = "\n".join(read_text(p) for p in files)
     unresolved_direct = len(re.findall(r'REX_FATAL\("Unresolved (?:call|branch)', all_generated))
+    generated_calls = len(re.findall(r'\bsub_[0-9A-Fa-f]{8}\(ctx, base\);', all_generated))
+    generated_indirect_dispatches = len(re.findall(r'REX_CALL_INDIRECT_FUNC\(', all_generated))
     details = list(seed_errors)
     if missing: details.append(f"{len(missing)} preserved seed(s) absent from generated registration: " + ", ".join(f"0x{x:08X}" for x in missing[:30]))
     if unresolved_direct: details.append(f"remaining generated direct unresolved traps={unresolved_direct}")
     if "FiberSetjmp" not in all_generated: details.append("FiberSetjmp injection not present")
     if "FiberLongjmp" not in all_generated: details.append("FiberLongjmp injection not present")
     return [Check("GATE-1", "PASS" if not details else "FAIL",
-        f"codegen audit: {len(registered)} registered functions; {len(seed_set)-len(missing)}/{len(seed_set)} preserved seeds registered", details)]
+        f"codegen audit: {len(registered)} registered functions; "
+        f"{len(seed_set)-len(missing)}/{len(seed_set)} preserved seeds registered; "
+        f"direct generated calls={generated_calls}; "
+        f"indirect dispatch sites={generated_indirect_dispatches}",
+        details)]
 
 def gate2_readiness(checks: list[Check]) -> Check:
     gate1 = next((c for c in checks if c.id == "GATE-1"), None)
