@@ -3430,7 +3430,7 @@ index 1fb1e16..6a1df0a 100644
    return xeXamContentCreate(user_index, root_name, content_data_ptr, sizeof(XCONTENT_DATA), flags,
                              disposition_ptr, license_mask_ptr, cache_size, content_size,
                              overlapped_ptr);
-@@ -282,6 +294,9 @@ u32 XamContentClose_entry(mapped_string root_name, mapped_void overlapped_ptr) {
+@@ -282,5 +294,8 @@ u32 XamContentClose_entry(mapped_string root_name, mapped_void overlapped_ptr) {
    // Closes a previously opened root from XamContentCreate*.
    auto result = REX_KERNEL_STATE()->content_manager()->CloseContent(root_name.value());
 +  REXKRNL_INFO("XamContentClose: root='{}' result={:#X}",
