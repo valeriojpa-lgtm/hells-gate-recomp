@@ -388,7 +388,7 @@ if not exist "%GAME%\default.xex" (
 )
 
 if not exist logs mkdir logs
-"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --gpu_backend=d3d12 --log_level=info --log_file="%~dp0logs\RUN00.log"
+"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --gpu_backend=d3d12 --d3d12_adapter=1 --log_level=debug --log_file="%~dp0logs\RUN00.log"
 exit /b %ERRORLEVEL%
 '@
     Set-Content -Encoding ASCII -LiteralPath (Join-Path $PackageDir "LAUNCH_RUN00.cmd") -Value $launch
@@ -403,6 +403,7 @@ Source project: valeriojpa-lgtm/hells-gate-recomp
 Branch target: q01-vanilla-baseline
 ReXGlue SDK: v0.10.0 + project patch
 Renderer: D3D12 / Xenos (native renderer disabled for baseline)
+RUN00 launcher: adapter 1 + debug logging for current RTX black-screen investigation
 
 Input default.xex SHA-256:  $xexHash
 Input default.xexp SHA-256: $xexpHash
