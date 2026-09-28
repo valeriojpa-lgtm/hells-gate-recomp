@@ -3,6 +3,7 @@ import importlib.util
 import pathlib
 import subprocess
 import sys
+import tempfile
 import tomllib
 import unittest
 
@@ -158,13 +159,42 @@ class ScannerPolicyTests(unittest.TestCase):
         self.assertNotRegex(patch, r"(?m)^\+\s*functionPointerScan\(ctx\);\s*$")
 
 class ManifestTests(unittest.TestCase):
+    def test_reset_text_preserves_canonical_function_names(self):
+        canonical = manifest.load_canonical_manifest()
+        text, added = manifest.build_reset_manifest_text()
+        self.assertEqual(added, [])
+        self.assertEqual(text, canonical)
+        self.assertIn('name = "unresolved_target_8236E3C0"', canonical)
+        self.assertIn("[entrypoint.functions.0x8236E3C0]", canonical)
+
+    def test_runtime_learning_does_not_duplicate_canonical_targets(self):
+        old_runtime = manifest.RUNTIME_SEEDS
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                runtime_path = pathlib.Path(tmp) / "runtime_seeds.txt"
+                log_path = pathlib.Path(tmp) / "run.log"
+                manifest.RUNTIME_SEEDS = str(runtime_path)
+                log_path.write_text(
+                    "Call to invalid or unregistered function at guest address "
+                    "0x8236E3C0\n"
+                    "Call to invalid or unregistered function at guest address "
+                    "0x82ABCDEF\n",
+                    encoding="utf-8",
+                )
+                self.assertEqual(manifest.learn_runtime_targets(str(log_path)), 0)
+                learned = runtime_path.read_text(encoding="utf-8")
+                self.assertNotIn("0x8236E3C0", learned)
+                self.assertIn("0x82ABCDEF", learned)
+        finally:
+            manifest.RUNTIME_SEEDS = old_runtime
+
     def test_base_manifest_preserves_upstream_midasm_hook(self):
-        self.assertIn("0x824D6B90", manifest.BASE_MANIFEST)
-        self.assertIn("UltrawideAspectHook", manifest.BASE_MANIFEST)
+        self.assertIn("0x824D6B90", manifest.load_canonical_manifest())
+        self.assertIn("UltrawideAspectHook", manifest.load_canonical_manifest())
 
     def test_append_targets_is_cumulative_and_deduplicated(self):
         text, added = manifest.append_targets(
-            manifest.BASE_MANIFEST,
+            manifest.load_canonical_manifest(),
             {0x8236E3C0, 0x825D2C30},
             "test",
         )
