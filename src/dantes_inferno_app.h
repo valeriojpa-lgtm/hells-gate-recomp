@@ -233,11 +233,19 @@ class DantesInfernoApp : public rex::ReXApp {
   void OnPreLaunchModule() override {
     uint8_t* membase = runtime()->memory()->virtual_membase();
 
-    // Do not patch the fiber callback through a hard-coded guest address here.
-    // Q01 supports retail XEX/TU variants whose data layout differs from the
-    // upstream maintainer SKU. The generated-code patcher detects the guest
-    // setjmp by instruction signature and removes its callback gate directly,
-    // which is variant-safe.
+    // Upstream v0.6.4 fixed the post-intro black-screen/fiber failure by
+    // clearing the TU2 fiber-switch callback slot in addition to patching the
+    // generated setjmp/longjmp code. Q01 always validates and requires the
+    // preserved TU2 default.xexp, so use the TU2 slot here.
+    constexpr uint32_t kTu2FiberCallbackSlot = 0x82CE68E4u;
+    auto* fiber_slot =
+        reinterpret_cast<uint32_t*>(membase + kTu2FiberCallbackSlot);
+    const uint32_t old_fiber_slot = *fiber_slot;
+    *fiber_slot = 0u;
+    REXLOG_INFO(
+        "Q01 FIBER: cleared TU2 callback slot 0x{:08X} (old=0x{:08X})",
+        kTu2FiberCallbackSlot, old_fiber_slot);
+
     if (REXCVAR_GET(dlc_dump_image)) {
       std::filesystem::path dump_path =
           std::filesystem::current_path() / "logs" / "guest_image.bin";
