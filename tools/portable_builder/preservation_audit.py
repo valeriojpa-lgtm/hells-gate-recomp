@@ -282,6 +282,19 @@ def source_checks(root: Path) -> list[Check]:
         ],
     )
 
+    dlc_policy_ok = (
+        'REXCVAR_DEFINE_BOOL(enable_dlc, false' in app
+        and 'if (REXCVAR_GET(enable_dlc))' in app
+        and 'DLC disabled for base-campaign preservation run.' in app
+    )
+    add_check(
+        checks,
+        "SRC-DLC-POLICY",
+        dlc_policy_ok,
+        "DLC is opt-in and disabled by default until GATE 12",
+        [] if dlc_policy_ok else ["base-campaign build must not auto-install DLC by default"],
+    )
+
     builder_path = tools_dir / "Build-DantePortable.ps1"
     builder = read_text(builder_path) if builder_path.exists() else ""
     builder_ok = (
@@ -292,6 +305,7 @@ def source_checks(root: Path) -> list[Check]:
         and "codegen-pass-" in builder
         and "BUILD_PROVENANCE.json" in builder
         and "--input_backend=sdl" in builder
+        and "--enable_dlc=false" in builder
         and "canonical_manifest_git_blob" in builder
         and 'runtime = "UNVERIFIED"' in builder
         and "RUN 00 BUILD PASS" not in builder
