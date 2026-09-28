@@ -16,6 +16,7 @@ $BuildDir    = Join-Path $ProjectRoot "out\q01"
 $PackageDir  = Join-Path $ProjectRoot "out\portable\Dantes_Inferno_RUN00"
 $DiscLanguageReport = Join-Path $BuildDir "disc-languages.json"
 $BaseLanguageId = 1
+$BaseCountryId = 103
 
 New-Item -ItemType Directory -Force -Path $Portable,$Downloads,$Logs | Out-Null
 $Transcript = Join-Path $Logs "portable_builder.log"
@@ -224,6 +225,20 @@ function Detect-DiscLanguages {
     }
 
     $script:BaseLanguageId = 1
+    $script:BaseCountryId = 103
+    $countryByLanguage = @{
+        1 = 103  # English / United States
+        2 = 53   # Japanese / Japan
+        3 = 24   # German / Germany
+        4 = 34   # French / France
+        5 = 31   # Spanish / Spain
+        6 = 50   # Italian / Italy
+        7 = 56   # Korean / Korea
+        8 = 20   # Chinese (Traditional)
+        9 = 84   # Portuguese / Portugal
+        11 = 82  # Polish / Poland
+        12 = 88  # Russian / Russia
+    }
     try {
         $detected = Get-Content -Raw -LiteralPath $DiscLanguageReport | ConvertFrom-Json
         if ($detected.found -and $detected.manifest -and $detected.manifest.text_languages) {
@@ -233,17 +248,21 @@ function Detect-DiscLanguages {
             } elseif ($ids.Count -gt 0) {
                 $script:BaseLanguageId = $ids[0]
             }
+            if ($countryByLanguage.ContainsKey($script:BaseLanguageId)) {
+                $script:BaseCountryId = [int]$countryByLanguage[$script:BaseLanguageId]
+            }
             $labels = @($detected.manifest.text_languages | ForEach-Object {
                 "$($_.name) (ID $($_.id))"
             })
             Write-Host ("Disc text languages: " + ($labels -join ", ")) -ForegroundColor Green
-            Write-Host "Base RUN language ID: $script:BaseLanguageId" -ForegroundColor Green
+            Write-Host "Base RUN locale: language $script:BaseLanguageId / country $script:BaseCountryId" -ForegroundColor Green
         } else {
-            Write-Host "No authoritative VIV language manifest found; base RUN keeps English ID 1." -ForegroundColor Yellow
+            Write-Host "No authoritative VIV language manifest found; base RUN keeps English ID 1 / country 103." -ForegroundColor Yellow
         }
     } catch {
-        Write-Host "Could not parse disc-languages.json; base RUN keeps English ID 1." -ForegroundColor Yellow
+        Write-Host "Could not parse disc-languages.json; base RUN keeps English ID 1 / country 103." -ForegroundColor Yellow
         $script:BaseLanguageId = 1
+        $script:BaseCountryId = 103
     }
 }
 
@@ -578,7 +597,7 @@ if errorlevel 1 (
 )
 del /q "!LOGDIR!\.preservation_write_test" >nul 2>&1
 
-"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="!USERDATA!" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --enable_dlc=false --user_language=__BASE_LANGUAGE_ID__ --log_level=debug --log_file="!LOGDIR!\RUN00.log"
+"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="!USERDATA!" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --enable_dlc=false --user_language=__BASE_LANGUAGE_ID__ --user_country=__BASE_COUNTRY_ID__ --log_level=debug --log_file="!LOGDIR!\RUN00.log"
 set "GAME_EXIT=%ERRORLEVEL%"
 
 rem Analyze every RUN automatically. Prefer the builder's portable Python when
@@ -604,6 +623,7 @@ if exist "!LOGDIR!\RUN00.report.md" (
 exit /b %GAME_EXIT%
 '@
     $launch = $launch.Replace("__BASE_LANGUAGE_ID__", [string]$BaseLanguageId)
+    $launch = $launch.Replace("__BASE_COUNTRY_ID__", [string]$BaseCountryId)
     Set-Content -Encoding ASCII -LiteralPath (Join-Path $PackageDir "LAUNCH_RUN00.cmd") -Value $launch
 
     $xexHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $GameDir "default.xex")).Hash.ToLowerInvariant()
@@ -655,6 +675,7 @@ exit /b %GAME_EXIT%
             default_xex_sha256 = $xexHash
             default_xexp_sha256 = $xexpHash
             base_language_id = $BaseLanguageId
+            base_country_id = $BaseCountryId
             disc_languages_sha256 = $discLanguageHash
         }
         sdk = [ordered]@{
@@ -694,7 +715,8 @@ Codegen: SKU-adaptive discovery from this exact XEX + sibling TU2
 Renderer: D3D12 / Xenos (native renderer disabled for baseline)
 User/cache root: isolated base-campaign userdata_base; LocalAppData RUN00-base fallback otherwise
 RUN00 launcher: RTX adapter 1 + official-compatible Xenos/D3D12 ROV + 60 Hz VSync + debug log
-Base language ID: $BaseLanguageId (selected from authoritative VIV manifest when available)
+Base locale: language ID $BaseLanguageId / country ID $BaseCountryId
+Language selected from authoritative VIV manifest when available; country follows upstream locale mapping.
 Disc language report: disc-languages.json
 
 Input default.xex SHA-256:  $xexHash
