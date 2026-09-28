@@ -422,16 +422,16 @@ function Build-Project {
         Run-CMake @("--build","out\q01","--target","dantes_inferno","--parallel")
         Run-CMake @("--build","out\q01","--target","rexgpu-xenos","--parallel")
 
-        # Static audit: both runtime offenders from RUN00(5) are proven
-        # indirect entrypoints and must be present in generated registration.
-        foreach ($required in @("8236E3C0","825D2C30")) {
-            $hit = Get-ChildItem -LiteralPath $generated -Recurse -File |
-                Select-String -SimpleMatch $required -Quiet
-            if (-not $hit) {
-                Fail "Post-build audit: required runtime target 0x$required is absent from generated code."
-            }
-            Write-Host "PASS generated runtime target 0x$required" -ForegroundColor Green
+        # Exhaustive preservation gate: validate every preserved upstream seed,
+        # generated direct trap count, fiber injections, retail inputs and
+        # reproducibility invariants. This supersedes the old two-address spot check.
+        $auditJson = Join-Path $BuildDir "preservation-static.json"
+        $auditMarkdown = Join-Path $BuildDir "preservation-static.md"
+        & python "tools\portable_builder\preservation_audit.py" --mode build --json $auditJson --markdown $auditMarkdown
+        if ($LASTEXITCODE -ne 0) {
+            Fail "Preservation static audit failed. See $auditMarkdown"
         }
+        Write-Host "PASS exhaustive preservation static gates (runtime still unverified)." -ForegroundColor Green
     }
     finally {
         Pop-Location
@@ -502,7 +502,7 @@ exit /b %ERRORLEVEL%
 Dante's Inferno - RUN 00 fresh local recompilation
 
 Source project: valeriojpa-lgtm/hells-gate-recomp
-Branch target: q01-vanilla-baseline
+Branch target: preservation-autofix
 ReXGlue SDK: v0.10.0 + project patch
 Codegen: SKU-adaptive discovery from this exact XEX + sibling TU2
 Renderer: D3D12 / Xenos (native renderer disabled for baseline)
@@ -519,7 +519,7 @@ No game files are uploaded by BUILD_DANTE_PORTABLE.cmd.
     Set-Content -Encoding UTF8 -LiteralPath (Join-Path $PackageDir "BUILD_INFO.txt") -Value $info
 
     Write-Host ""
-    Write-Host "RUN 00 BUILD PASS" -ForegroundColor Green
+    Write-Host "RUN 00 BUILD/STATIC GATES PASS - RUNTIME UNVERIFIED" -ForegroundColor Green
     Write-Host "Output: $PackageDir" -ForegroundColor Green
     Write-Host "Launch: $(Join-Path $PackageDir 'LAUNCH_RUN00.cmd')" -ForegroundColor Green
 }
