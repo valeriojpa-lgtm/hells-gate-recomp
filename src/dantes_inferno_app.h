@@ -48,8 +48,13 @@ REXCVAR_DEFINE_BOOL(dlc_dump_image, false, "Diagnostics",
                     "Dump the loaded guest image for offline DLC analysis (requires restart).")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
+REXCVAR_DEFINE_BOOL(enable_dlc, false, "Content",
+                    "Enable DLC discovery/auto-install. Keep disabled for base-campaign "
+                    "preservation gates; enable only for GATE 12.")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 REXCVAR_DEFINE_STRING(dlc_source_path, "dlc", "Content",
-                      "Folder scanned for DLC packages to auto-install on launch. "
+                      "Folder scanned for DLC packages to auto-install when enable_dlc=true. "
                       "If empty or missing, the game runs without DLC.");
 
 class FpsOverlayDialog : public rex::ui::ImGuiDialog {
@@ -312,7 +317,12 @@ class DantesInfernoApp : public rex::ReXApp {
       rex::cvar::SetFlagByName("vsync", fast ? (saved_vsync_ ? "true" : "false") : "false");
     });
 
-    AutoInstallDlc();
+    if (REXCVAR_GET(enable_dlc)) {
+      REXLOG_INFO("DLC enabled for this run.");
+      AutoInstallDlc();
+    } else {
+      REXLOG_INFO("DLC disabled for base-campaign preservation run.");
+    }
   }
 
   void AutoInstallDlc() {
