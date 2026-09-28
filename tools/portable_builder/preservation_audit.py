@@ -154,7 +154,14 @@ def source_checks(root: Path) -> list[Check]:
 
     builder_path = tools_dir / "Build-DantePortable.ps1"
     builder = read_text(builder_path) if builder_path.exists() else ""
-    builder_ok = "preservation-autofix" in builder and "preservation_audit.py" in builder and "analyze_run_log.py" in builder and "RUN 00 BUILD PASS" not in builder
+    builder_ok = (
+        "preservation-autofix" in builder
+        and "preservation_audit.py" in builder
+        and "analyze_run_log.py" in builder
+        and "preservation-evidence" in builder
+        and "codegen-pass-" in builder
+        and "RUN 00 BUILD PASS" not in builder
+    )
     add_check(checks, "SRC-BUILDER-POLICY", builder_ok,
         "builder distinguishes build/static readiness from runtime functionality",
         [] if builder_ok else ["builder must invoke gate tools and never label a merely compiled EXE as runtime PASS"])
@@ -192,16 +199,45 @@ def generated_checks(root: Path, required: bool) -> list[Check]:
     unresolved_direct = len(re.findall(r'REX_FATAL\("Unresolved (?:call|branch)', all_generated))
     generated_calls = len(re.findall(r'\bsub_[0-9A-Fa-f]{8}\(ctx, base\);', all_generated))
     generated_indirect_dispatches = len(re.findall(r'REX_CALL_INDIRECT_FUNC\(', all_generated))
+
+    evidence_dir = root / "out" / "q01" / "preservation-evidence"
+    evidence_logs = sorted(evidence_dir.glob("codegen-pass-*.log")) if evidence_dir.exists() else []
+    scanner_counts: list[int] = []
+    validation_summaries: list[str] = []
+    for evidence_log in evidence_logs:
+        evidence_text = read_text(evidence_log)
+        scanner_counts.extend(
+            int(value)
+            for value in re.findall(
+                r"dataSectionFunctionPointerScan: found (\d+) new function pointer targets",
+                evidence_text,
+            )
+        )
+        validation_summaries.extend(
+            "branches=" + branches + ", functions=" + functions + ", edges=" + edges
+            for branches, functions, edges in re.findall(
+                r"Analyze: checked (\d+) branches in (\d+) functions, verified (\d+) edges",
+                evidence_text,
+            )
+        )
+
     details = list(seed_errors)
     if missing: details.append(f"{len(missing)} preserved seed(s) absent from generated registration: " + ", ".join(f"0x{x:08X}" for x in missing[:30]))
     if unresolved_direct: details.append(f"remaining generated direct unresolved traps={unresolved_direct}")
     if "FiberSetjmp" not in all_generated: details.append("FiberSetjmp injection not present")
     if "FiberLongjmp" not in all_generated: details.append("FiberLongjmp injection not present")
+    if required and not evidence_logs:
+        details.append("codegen preservation evidence logs missing")
+    if required and evidence_logs and not scanner_counts:
+        details.append("dataSectionFunctionPointerScan execution was not observed in codegen evidence")
     return [Check("GATE-1", "PASS" if not details else "FAIL",
         f"codegen audit: {len(registered)} registered functions; "
         f"{len(seed_set)-len(missing)}/{len(seed_set)} preserved seeds registered; "
         f"direct generated calls={generated_calls}; "
-        f"indirect dispatch sites={generated_indirect_dispatches}",
+        f"indirect dispatch sites={generated_indirect_dispatches}; "
+        f"codegen passes={len(evidence_logs)}; "
+        f"data-section scanner additions={scanner_counts or 'unobserved'}"
+        + (f"; validation={validation_summaries[-1]}" if validation_summaries else ""),
         details)]
 
 def gate2_readiness(checks: list[Check]) -> Check:
