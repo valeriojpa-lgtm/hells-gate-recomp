@@ -465,6 +465,14 @@ function Package-Run00 {
     Copy-Item -Force $runtime $PackageDir
     Copy-Item -Force $gpu $PackageDir
 
+    # Ship the runtime gate parser and the build-time static evidence with the
+    # package. The parser contains no game data and can run after every launch.
+    Copy-Item -Force (Join-Path $ProjectRoot "tools\portable_builder\analyze_run_log.py") $PackageDir
+    foreach ($report in @("preservation-static.json","preservation-static.md")) {
+        $src = Join-Path $BuildDir $report
+        if (Test-Path -LiteralPath $src) { Copy-Item -Force $src $PackageDir }
+    }
+
     foreach ($dll in @("amd_fidelityfx_dx12.dll","amd_fidelityfx_vk.dll")) {
         $p = Find-BuiltFile $dll
         if ($p) { Copy-Item -Force $p $PackageDir }
@@ -491,7 +499,29 @@ if not exist logs mkdir logs
 set "USERDATA=%~dp0userdata"
 if not exist "%USERDATA%" mkdir "%USERDATA%"
 "%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="%USERDATA%" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --log_level=debug --log_file="%~dp0logs\RUN00.log"
-exit /b %ERRORLEVEL%
+set "GAME_EXIT=%ERRORLEVEL%"
+
+rem Analyze every RUN automatically. Prefer the builder's portable Python when
+rem this package is still inside the repository; fall back to the Python launcher.
+set "PROJECT_PY=%~dp0..\..\..\.portable\python\python.exe"
+set "ANALYZER=%~dp0analyze_run_log.py"
+if exist "%PROJECT_PY%" (
+  "%PROJECT_PY%" "%ANALYZER%" "%~dp0logs\RUN00.log" --json "%~dp0logs\RUN00.report.json" --markdown "%~dp0logs\RUN00.report.md"
+  if exist "%~dp0..\..\..\tools\portable_builder\prepare_variant_manifest.py" (
+    "%PROJECT_PY%" "%~dp0..\..\..\tools\portable_builder\prepare_variant_manifest.py" --learn-runtime-log "%~dp0logs\RUN00.log"
+  )
+) else (
+  where py >nul 2>&1
+  if not errorlevel 1 py "%ANALYZER%" "%~dp0logs\RUN00.log" --json "%~dp0logs\RUN00.report.json" --markdown "%~dp0logs\RUN00.report.md"
+)
+
+echo.
+if exist "%~dp0logs\RUN00.report.md" (
+  echo RUN gate report: "%~dp0logs\RUN00.report.md"
+) else (
+  echo Runtime analyzer could not run automatically; the raw RUN00.log is preserved.
+)
+exit /b %GAME_EXIT%
 '@
     Set-Content -Encoding ASCII -LiteralPath (Join-Path $PackageDir "LAUNCH_RUN00.cmd") -Value $launch
 
