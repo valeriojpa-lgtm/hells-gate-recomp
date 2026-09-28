@@ -13,6 +13,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Compile preservation Python
+        run: |
+          python -m py_compile \
+            tools/portable_builder/prepare_variant_manifest.py \
+            tools/portable_builder/preservation_audit.py \
+            tools/portable_builder/analyze_run_log.py \
+            tools/portable_builder/test_preservation_tools.py \
+            patches/generated/apply_generated_patches.py
       - name: Test preservation tools
         run: python -m unittest tools/portable_builder/test_preservation_tools.py -v
       - name: Parse portable builder PowerShell
