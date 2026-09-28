@@ -233,11 +233,11 @@ class DantesInfernoApp : public rex::ReXApp {
   void OnPreLaunchModule() override {
     uint8_t* membase = runtime()->memory()->virtual_membase();
 
-    auto* dispatcher = runtime()->function_dispatcher();
-    const bool is_tu2 = dispatcher && dispatcher->GetFunction(0x82879110);
-    uint32_t slot = is_tu2 ? 0x82CE68E4u : 0x82B101E4u;
-    *reinterpret_cast<uint32_t*>(membase + slot) = 0u;
-
+    // Do not patch the fiber callback through a hard-coded guest address here.
+    // Q01 supports retail XEX/TU variants whose data layout differs from the
+    // upstream maintainer SKU. The generated-code patcher detects the guest
+    // setjmp by instruction signature and removes its callback gate directly,
+    // which is variant-safe.
     if (REXCVAR_GET(dlc_dump_image)) {
       std::filesystem::path dump_path =
           std::filesystem::current_path() / "logs" / "guest_image.bin";
