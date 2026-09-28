@@ -257,8 +257,28 @@ function Prepare-Sdk {
         if ($LASTEXITCODE -ne 0) { Fail "ReXGlue SDK clone failed." }
     }
 
-    & git -C $SdkDir submodule update --init --recursive --depth 1
-    if ($LASTEXITCODE -ne 0) { Fail "ReXGlue SDK submodule download failed." }
+    # Always restore the SDK to the exact v0.10.0 baseline before applying
+    # Hell's Gate's current patch. This makes the builder reproducible across
+    # patch revisions instead of layering a new patch over an older patched
+    # working tree ("does not match index").
+    Write-Host "Restoring pristine ReXGlue v0.10.0 baseline..." -ForegroundColor DarkGray
+    & git -C $SdkDir reset --hard v0.10.0
+    if ($LASTEXITCODE -ne 0) {
+        & git -C $SdkDir reset --hard f5337cdc947ff6d4c4196737e2c807a48f2a1fc2
+        if ($LASTEXITCODE -ne 0) { Fail "Could not reset ReXGlue SDK to v0.10.0." }
+    }
+
+    & git -C $SdkDir submodule sync --recursive
+    if ($LASTEXITCODE -ne 0) { Fail "ReXGlue SDK submodule sync failed." }
+
+    & git -C $SdkDir submodule update --init --recursive --force --depth 1
+    if ($LASTEXITCODE -ne 0) { Fail "ReXGlue SDK submodule download/reset failed." }
+
+    # Reset modified tracked files inside every submodule too. In particular,
+    # this restores libmspack's symlink placeholders after a previous build
+    # materialized them as ordinary Windows files.
+    & git -C $SdkDir submodule foreach --recursive "git reset --hard"
+    if ($LASTEXITCODE -ne 0) { Fail "ReXGlue SDK submodule reset failed." }
 
     # libmspack ships cabextract/mspack as POSIX symlinks. Standard Windows
     # Git checkouts materialize them as tiny text files, which Clang then
