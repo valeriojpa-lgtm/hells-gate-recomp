@@ -356,6 +356,14 @@ function Build-Project {
             $codegenExit = $LASTEXITCODE
             $codegenOutput | ForEach-Object { Write-Host $_ }
 
+            # Preserve every discovery pass as evidence. This makes scanner /
+            # graph regressions diagnosable after the build instead of relying
+            # on terminal scrollback.
+            $codegenEvidenceDir = Join-Path $BuildDir "preservation-evidence"
+            New-Item -ItemType Directory -Force -Path $codegenEvidenceDir | Out-Null
+            $codegenLog = Join-Path $codegenEvidenceDir ("codegen-pass-{0:D2}.log" -f $pass)
+            $codegenOutput | Set-Content -Encoding UTF8 -LiteralPath $codegenLog
+
             if ($codegenExit -ne 0) {
                 $validationTargets = New-Object System.Collections.Generic.HashSet[string]
                 foreach ($line in $codegenOutput) {
@@ -471,6 +479,10 @@ function Package-Run00 {
     foreach ($report in @("preservation-static.json","preservation-static.md")) {
         $src = Join-Path $BuildDir $report
         if (Test-Path -LiteralPath $src) { Copy-Item -Force $src $PackageDir }
+    }
+    $evidence = Join-Path $BuildDir "preservation-evidence"
+    if (Test-Path -LiteralPath $evidence) {
+        Copy-Item -Recurse -Force $evidence (Join-Path $PackageDir "preservation-evidence")
     }
 
     foreach ($dll in @("amd_fidelityfx_dx12.dll","amd_fidelityfx_vk.dll")) {
