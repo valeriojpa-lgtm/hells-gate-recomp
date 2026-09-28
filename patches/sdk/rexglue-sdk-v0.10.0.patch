@@ -4256,9 +4256,3 @@ index 23645ef..110e310 100644
      // Limiting the frame rate, but lets too long frames cause tearing not to
      // make the latency even worse.
      swapchain_create_info.presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-diff --git a/thirdparty/libmspack b/thirdparty/libmspack
---- a/thirdparty/libmspack
-+++ b/thirdparty/libmspack
-@@ -1 +1 @@
--Subproject commit 305907723a4e7ab2018e58040059ffb5e77db837
-+Subproject commit 305907723a4e7ab2018e58040059ffb5e77db837-dirty
