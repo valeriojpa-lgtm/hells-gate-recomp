@@ -4256,3 +4256,76 @@ index 23645ef..110e310 100644
      // Limiting the frame rate, but lets too long frames cause tearing not to
      // make the latency even worse.
      swapchain_create_info.presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+
+diff --git a/src/core/logging.cpp b/src/core/logging.cpp
+--- a/src/core/logging.cpp
++++ b/src/core/logging.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include <algorithm>
+ #include <cctype>
+ #include <charconv>
++#include <cstdio>
+ #include <filesystem>
+ #include <mutex>
+ #include <unordered_map>
+@@ -72,7 +73,15 @@ LogConfig g_config;
+ 
+ std::filesystem::path NextSequentialLogPath(const std::filesystem::path& logs_dir,
+                                             std::string_view app_name) {
+-  std::filesystem::create_directories(logs_dir);
++  // PRESERVATION: logging must never abort the game merely because the
++  // executable lives under a protected directory (for example Program Files).
++  std::error_code create_ec;
++  std::filesystem::create_directories(logs_dir, create_ec);
++  if (create_ec) {
++    std::fprintf(stderr, "ReXGlue logging: cannot create log directory '%s': %s\n",
++                 logs_dir.string().c_str(), create_ec.message().c_str());
++    return {};
++  }
+ 
+   int max_seq = 0;
+   std::string prefix = std::string(app_name) + "_";
+@@ -225,13 +234,20 @@ void InitLogging(const LogConfig& config) {
+                                           : std::filesystem::path(config.log_dir);
+     resolved_path = NextSequentialLogPath(log_dir, config.app_name).string();
+   }
+   if (!resolved_path.empty()) {
+-    auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+-        resolved_path, static_cast<size_t>(REXCVAR_GET(log_max_file_size_mb)) * 1024 * 1024,
+-        static_cast<size_t>(REXCVAR_GET(log_max_files)), false);
+-    sink->set_level(spdlog::level::trace);
+-    sink->set_pattern(config.file_pattern);
+-    g_file_sink = sink;
++    try {
++      auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
++          resolved_path, static_cast<size_t>(REXCVAR_GET(log_max_file_size_mb)) * 1024 * 1024,
++          static_cast<size_t>(REXCVAR_GET(log_max_files)), false);
++      sink->set_level(spdlog::level::trace);
++      sink->set_pattern(config.file_pattern);
++      g_file_sink = sink;
++    } catch (const spdlog::spdlog_ex& e) {
++      std::fprintf(stderr, "ReXGlue logging: cannot open log file '%s': %s\n",
++                   resolved_path.c_str(), e.what());
++      g_file_sink.reset();
++    }
+   }
+ 
+   g_extra_sinks = config.extra_sinks;
+diff --git a/src/ui/rex_app.cpp b/src/ui/rex_app.cpp
+--- a/src/ui/rex_app.cpp
++++ b/src/ui/rex_app.cpp
+@@ -166,10 +166,14 @@ bool ReXApp::SetupEnvironment() {
+   auto log_config = rex::BuildLogConfig(log_file_cvar.empty() ? nullptr : log_file_cvar.c_str(),
+                                         log_level_str, category_levels);
+   if (log_file_cvar.empty()) {
++    // Logs are user data, not installation data. Keeping them below the
++    // executable directory makes Program Files installs fail on Windows.
+     log_config.app_name = std::string(GetName());
+-    log_config.log_dir = (exe_dir / "logs").string();
++    const auto log_dir =
++        user_data_root_.empty() ? (exe_dir / "logs") : (user_data_root_ / "logs");
++    log_config.log_dir = log_dir.string();
+   }
+ 
+   rex::InitLogging(log_config);
