@@ -535,7 +535,7 @@ if errorlevel 1 (
 )
 del /q "!LOGDIR!\.preservation_write_test" >nul 2>&1
 
-"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="!USERDATA!" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --log_level=debug --log_file="!LOGDIR!\RUN00.log"
+"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="!USERDATA!" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --enable_dlc=false --log_level=debug --log_file="!LOGDIR!\RUN00.log"
 set "GAME_EXIT=%ERRORLEVEL%"
 
 rem Analyze every RUN automatically. Prefer the builder's portable Python when
