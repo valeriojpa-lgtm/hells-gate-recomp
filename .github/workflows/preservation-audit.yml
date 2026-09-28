@@ -15,6 +15,20 @@ jobs:
           python-version: "3.12"
       - name: Test preservation tools
         run: python -m unittest tools/portable_builder/test_preservation_tools.py -v
+      - name: Parse portable builder PowerShell
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "tools/portable_builder/Build-DantePortable.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
       - name: Validate source-only preservation invariants
         run: |
           python tools/portable_builder/preservation_audit.py \
