@@ -1,7 +1,7 @@
 # Canonical preservation ledger.
 # Exact function-entrypoint set from florinp93/hells-gate-recomp v0.6.4-beta,
 # the TU2 release that closed the black-screen/unresolved-dispatch regression.
-# Canonical sorted-address FNV-1a 64: 0xB93F1851211ACBF0
+# Canonical sorted-address FNV-1a 64 (preservation_audit.py): 0x2F1669F5BE191238
 # Proven/known guest function entrypoints carried by the upstream Hell's Gate manifest.
 # One hex guest address per line. The preservation builder merges these with
 # targets discovered from the user's XEX and from previous runtime logs.
