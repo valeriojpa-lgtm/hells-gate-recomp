@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import importlib.util
 import pathlib
+import subprocess
 import sys
+import tomllib
 import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -27,6 +29,31 @@ VdSwap: format=1, color_space=0, 1280x720, tiled=1
 
 def gate(report, gate_id):
     return next(g for g in report["gates"] if g["id"] == gate_id)
+
+class RepositoryPolicyTests(unittest.TestCase):
+    def test_manifest_is_valid_toml(self):
+        repo_root = HERE.parents[1]
+        with (repo_root / "dantes_inferno_manifest.toml").open("rb") as f:
+            data = tomllib.load(f)
+        self.assertEqual(data["project"]["name"], "dantes_inferno")
+        self.assertEqual(data["entrypoint"]["file_path"], "game/default.xex")
+
+    def test_no_commercial_game_binaries_are_tracked(self):
+        repo_root = HERE.parents[1]
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=repo_root,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        forbidden_suffixes = (".xex", ".xexp", ".viv", ".iso", ".xiso", ".god", ".ciso", ".stfs")
+        tracked = [
+            line.strip()
+            for line in result.stdout.splitlines()
+            if line.strip().lower().endswith(forbidden_suffixes)
+        ]
+        self.assertEqual(tracked, [], f"commercial game binaries tracked: {tracked}")
 
 class RuntimeGateTests(unittest.TestCase):
     def test_unresolved_blocks_framebuffer_gate(self):
