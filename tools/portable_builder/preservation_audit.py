@@ -56,14 +56,27 @@ def manifest_function_names(text: str) -> dict[int, str | None]:
     names: dict[int, str | None] = {}
     current: int | None = None
     for raw in text.splitlines():
-        match = re.match(r"^\[entrypoint\.functions\.0x([0-9A-Fa-f]+)\]$", raw.strip())
+        stripped = raw.strip()
+        match = re.match(
+            r"^\[entrypoint\.functions\.0x([0-9A-Fa-f]+)\]$",
+            stripped,
+        )
         if match:
             current = int(match.group(1), 16)
             names[current] = None
             continue
         if current is not None:
-            name_match = re.match(r'^name\s*=\s*"([^"]+)"\s*def parse_seed_file(path: Path) -> tuple[list[int], list[str]]:
-    values, errors = [], []
+            name_match = re.match(r'^name\s*=\s*"([^"]+)"\s*$', stripped)
+            if name_match:
+                names[current] = name_match.group(1)
+            elif stripped.startswith("["):
+                current = None
+    return names
+
+
+def parse_seed_file(path: Path) -> tuple[list[int], list[str]]:
+    values: list[int] = []
+    errors: list[str] = []
     if not path.exists():
         return values, [f"missing {path}"]
     for lineno, raw in enumerate(read_text(path).splitlines(), 1):
@@ -80,6 +93,7 @@ def manifest_function_names(text: str) -> dict[int, str | None]:
             continue
         values.append(addr)
     return values, errors
+
 
 def manifest_addresses(text: str) -> list[int]:
     return [int(m.group(1), 16) for m in MANIFEST_ENTRY_RE.finditer(text)]
