@@ -58,6 +58,20 @@ ACCESS_RE = re.compile(
 FATAL_RE = re.compile(
     r"(?:\[fatal\]|\bREX_FATAL\b|Assertion failed:|\bPANIC\b)", re.I
 )
+SAVE_CONTENT_RE = re.compile(
+    r"XamContentCreate:\s+root='([^']*)'\s+saved=(\d+)\s+"
+    r"type=0[xX]([0-9A-Fa-f]+)\s+file='([^']*)'\s+flags=0[xX]([0-9A-Fa-f]+)",
+    re.I,
+)
+SAVE_RESULT_RE = re.compile(
+    r"XamContentCreateEx:\s+sync result=0[xX]([0-9A-Fa-f]+)\s+disposition=(\d+)",
+    re.I,
+)
+SAVE_CLOSE_RE = re.compile(
+    r"XamContentClose:\s+root='([^']*)'\s+result=0[xX]([0-9A-Fa-f]+)",
+    re.I,
+)
+DANTE_SAVE_LANGUAGE_RE = re.compile(r"\bDI1-([A-Za-z]{2})-", re.I)
 
 # Observations are deliberately not gate PASS criteria. They answer the much
 # safer question "did this subsystem produce evidence in this run?"
@@ -184,6 +198,39 @@ def report(data: str) -> dict:
     access_violations = len(ACCESS_RE.findall(data))
     fatal_markers = len(FATAL_RE.findall(data))
     observations = observation_counts(data)
+
+    save_events = [
+        {
+            "root": match.group(1),
+            "saved": match.group(2) == "1",
+            "content_type": f"0x{int(match.group(3), 16):X}",
+            "file": match.group(4),
+            "flags": f"0x{int(match.group(5), 16):X}",
+        }
+        for match in SAVE_CONTENT_RE.finditer(data)
+    ]
+    save_results = [
+        {
+            "result": f"0x{int(match.group(1), 16):X}",
+            "disposition": int(match.group(2)),
+        }
+        for match in SAVE_RESULT_RE.finditer(data)
+    ]
+    save_closes = [
+        {
+            "root": match.group(1),
+            "result": f"0x{int(match.group(2), 16):X}",
+        }
+        for match in SAVE_CLOSE_RE.finditer(data)
+    ]
+    savedata_files = sorted({
+        event["file"] for event in save_events if event["saved"] and event["file"]
+    })
+    save_language_codes = sorted({
+        language.upper()
+        for filename in savedata_files
+        for language in DANTE_SAVE_LANGUAGE_RE.findall(filename)
+    })
 
     gates = [
         Gate(
@@ -365,6 +412,19 @@ def report(data: str) -> dict:
             f"RENDER CAPTURE: {len(capture_failures)} authoritative guest-output "
             "capture attempt(s) failed."
         )
+    if savedata_files:
+        diagnosis.append(
+            "SAVE OBSERVED: " + ", ".join(savedata_files[:8])
+            + (" ..." if len(savedata_files) > 8 else "")
+        )
+    if save_language_codes:
+        diagnosis.append(
+            "SAVE/LANGUAGE: Dante language-coded save filename(s) observed for "
+            + ", ".join(save_language_codes)
+            + ". Upstream explicitly reverted its destructive filename "
+              "normalization, so cross-language visibility must be validated "
+              "without mutating savedata in place."
+        )
 
     observed_names = [
         name
@@ -423,6 +483,18 @@ def report(data: str) -> dict:
                 ),
             }
         )
+    if save_language_codes:
+        historical_matches.append(
+            {
+                "id": "upstream-save-language-filename-family",
+                "confidence": "high",
+                "reason": (
+                    "Dante save filenames contain a two-letter language code. "
+                    "Upstream briefly normalized these names, then explicitly "
+                    "reverted that mutation before v0.6.5."
+                ),
+            }
+        )
 
     metrics = {
         "registered_functions": max(regs) if regs else None,
@@ -446,11 +518,16 @@ def report(data: str) -> dict:
         "vfetch_oob_count": vfetch_count,
         "access_violation_marker_count": access_violations,
         "fatal_assert_marker_count": fatal_markers,
+        "save_content_events": save_events,
+        "save_content_results": save_results,
+        "save_content_closes": save_closes,
+        "savedata_files": savedata_files,
+        "save_language_codes": save_language_codes,
         "observations": observations,
     }
 
     return {
-        "schema": 3,
+        "schema": 4,
         "audit": "dantes-inferno-runtime-gates",
         "metrics": metrics,
         "gates": [asdict(gate) for gate in gates],
