@@ -495,7 +495,7 @@ function Package-Run00 {
 
     $launch = @'
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 set "GAME=%~dp0game"
@@ -507,10 +507,35 @@ if not exist "%GAME%\default.xex" (
   exit /b 1
 )
 
-if not exist logs mkdir logs
-set "USERDATA=%~dp0userdata"
-if not exist "%USERDATA%" mkdir "%USERDATA%"
-"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="%USERDATA%" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --log_level=debug --log_file="%~dp0logs\RUN00.log"
+rem Prefer fully portable state beside the executable, but never require
+rem write access to the installation directory. Program Files and other
+rem protected locations transparently fall back to LocalAppData.
+set "STATE_ROOT=%~dp0userdata"
+if not exist "!STATE_ROOT!" mkdir "!STATE_ROOT!" >nul 2>&1
+> "!STATE_ROOT!\.preservation_write_test" echo writable 2>nul
+if errorlevel 1 (
+  set "STATE_ROOT=%LOCALAPPDATA%\HellsGatePreservation\RUN00"
+  if not exist "!STATE_ROOT!" mkdir "!STATE_ROOT!" >nul 2>&1
+  echo Portable directory is read-only; using "!STATE_ROOT!" for user data and logs.
+) else (
+  del /q "!STATE_ROOT!\.preservation_write_test" >nul 2>&1
+)
+if not exist "!STATE_ROOT!" (
+  echo Could not create a writable user-data directory.
+  exit /b 2
+)
+
+set "USERDATA=!STATE_ROOT!"
+set "LOGDIR=!STATE_ROOT!\logs"
+if not exist "!LOGDIR!" mkdir "!LOGDIR!" >nul 2>&1
+> "!LOGDIR!\.preservation_write_test" echo writable 2>nul
+if errorlevel 1 (
+  echo Log directory is not writable: "!LOGDIR!"
+  exit /b 3
+)
+del /q "!LOGDIR!\.preservation_write_test" >nul 2>&1
+
+"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="!USERDATA!" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --log_level=debug --log_file="!LOGDIR!\RUN00.log"
 set "GAME_EXIT=%ERRORLEVEL%"
 
 rem Analyze every RUN automatically. Prefer the builder's portable Python when
@@ -518,18 +543,18 @@ rem this package is still inside the repository; fall back to the Python launche
 set "PROJECT_PY=%~dp0..\..\..\.portable\python\python.exe"
 set "ANALYZER=%~dp0analyze_run_log.py"
 if exist "%PROJECT_PY%" (
-  "%PROJECT_PY%" "%ANALYZER%" "%~dp0logs\RUN00.log" --json "%~dp0logs\RUN00.report.json" --markdown "%~dp0logs\RUN00.report.md"
+  "%PROJECT_PY%" "%ANALYZER%" "!LOGDIR!\RUN00.log" --json "!LOGDIR!\RUN00.report.json" --markdown "!LOGDIR!\RUN00.report.md"
   if exist "%~dp0..\..\..\tools\portable_builder\prepare_variant_manifest.py" (
-    "%PROJECT_PY%" "%~dp0..\..\..\tools\portable_builder\prepare_variant_manifest.py" --learn-runtime-log "%~dp0logs\RUN00.log"
+    "%PROJECT_PY%" "%~dp0..\..\..\tools\portable_builder\prepare_variant_manifest.py" --learn-runtime-log "!LOGDIR!\RUN00.log"
   )
 ) else (
   where py >nul 2>&1
-  if not errorlevel 1 py "%ANALYZER%" "%~dp0logs\RUN00.log" --json "%~dp0logs\RUN00.report.json" --markdown "%~dp0logs\RUN00.report.md"
+  if not errorlevel 1 py "%ANALYZER%" "!LOGDIR!\RUN00.log" --json "!LOGDIR!\RUN00.report.json" --markdown "!LOGDIR!\RUN00.report.md"
 )
 
 echo.
-if exist "%~dp0logs\RUN00.report.md" (
-  echo RUN gate report: "%~dp0logs\RUN00.report.md"
+if exist "!LOGDIR!\RUN00.report.md" (
+  echo RUN gate report: "!LOGDIR!\RUN00.report.md"
 ) else (
   echo Runtime analyzer could not run automatically; the raw RUN00.log is preserved.
 )
