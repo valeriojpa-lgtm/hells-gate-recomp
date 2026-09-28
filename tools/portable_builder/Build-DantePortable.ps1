@@ -208,32 +208,38 @@ function Bootstrap-Tools {
 }
 
 function Repair-LibmspackWindowsLinks {
-    $libRoot = Join-Path $SdkDir "thirdparty\libmspack"
-    $linkRoot = Join-Path $libRoot "cabextract\mspack"
+    $linkRoot = Join-Path $SdkDir "thirdparty\libmspack\cabextract\mspack"
     if (-not (Test-Path -LiteralPath $linkRoot)) { return }
 
     $fixed = 0
     Get-ChildItem -LiteralPath $linkRoot -File | ForEach-Object {
         $item = $_
+
+        # Real source/header files are much larger. libmspack's POSIX symlinks
+        # become tiny text files on a standard Windows checkout, containing a
+        # relative target such as ../../libmspack/mspack/lzxd.c.
         if ($item.Length -gt 256) { return }
 
         $targetText = (Get-Content -LiteralPath $item.FullName -Raw).Trim()
-        if ($targetText -notmatch '^\.\./\.\./\.\./libmspack/mspack/') { return }
+        if ($targetText -notmatch '^\.\./') { return }
+        if ($targetText -notmatch 'libmspack/mspack/') { return }
 
-        $targetRelative = $targetText -replace '/', '\'
+        $targetRelative = $targetText.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
         $targetFull = [System.IO.Path]::GetFullPath((Join-Path $item.DirectoryName $targetRelative))
+
         if (-not (Test-Path -LiteralPath $targetFull)) {
-            Fail "libmspack Windows symlink target is missing: $targetFull"
+            Fail "libmspack symlink target is missing: $targetFull"
         }
 
         Copy-Item -Force -LiteralPath $targetFull -Destination $item.FullName
+        Write-Host "Fixed libmspack link: $($item.Name)" -ForegroundColor DarkGray
         $fixed++
     }
 
     if ($fixed -gt 0) {
         Write-Host "Materialized $fixed libmspack symlinks for Windows." -ForegroundColor Green
     } else {
-        Write-Host "libmspack Windows symlinks already materialized." -ForegroundColor DarkGray
+        Write-Host "libmspack symlinks are already real files." -ForegroundColor DarkGray
     }
 }
 
