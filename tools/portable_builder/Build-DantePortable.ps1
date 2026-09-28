@@ -207,6 +207,36 @@ function Bootstrap-Tools {
     Write-Host "Clang:  $((& clang --version | Select-Object -First 1))" -ForegroundColor DarkGray
 }
 
+function Repair-LibmspackWindowsLinks {
+    $libRoot = Join-Path $SdkDir "thirdparty\libmspack"
+    $linkRoot = Join-Path $libRoot "cabextract\mspack"
+    if (-not (Test-Path -LiteralPath $linkRoot)) { return }
+
+    $fixed = 0
+    Get-ChildItem -LiteralPath $linkRoot -File | ForEach-Object {
+        $item = $_
+        if ($item.Length -gt 256) { return }
+
+        $targetText = (Get-Content -LiteralPath $item.FullName -Raw).Trim()
+        if ($targetText -notmatch '^\.\./\.\./\.\./libmspack/mspack/') { return }
+
+        $targetRelative = $targetText -replace '/', '\'
+        $targetFull = [System.IO.Path]::GetFullPath((Join-Path $item.DirectoryName $targetRelative))
+        if (-not (Test-Path -LiteralPath $targetFull)) {
+            Fail "libmspack Windows symlink target is missing: $targetFull"
+        }
+
+        Copy-Item -Force -LiteralPath $targetFull -Destination $item.FullName
+        $fixed++
+    }
+
+    if ($fixed -gt 0) {
+        Write-Host "Materialized $fixed libmspack symlinks for Windows." -ForegroundColor Green
+    } else {
+        Write-Host "libmspack Windows symlinks already materialized." -ForegroundColor DarkGray
+    }
+}
+
 function Prepare-Sdk {
     Step "[2/7] Prepare ReXGlue SDK v0.10.0 + Hell's Gate patches"
     $thirdparty = Join-Path $ProjectRoot "thirdparty"
@@ -223,6 +253,11 @@ function Prepare-Sdk {
 
     & git -C $SdkDir submodule update --init --recursive --depth 1
     if ($LASTEXITCODE -ne 0) { Fail "ReXGlue SDK submodule download failed." }
+
+    # libmspack ships cabextract/mspack as POSIX symlinks. Standard Windows
+    # Git checkouts materialize them as tiny text files, which Clang then
+    # mistakes for C source. Copy each link target over the placeholder.
+    Repair-LibmspackWindowsLinks
 
     & (Join-Path $ProjectRoot "patches\apply_sdk_patches.ps1") -SdkDir "thirdparty\rexglue-sdk"
     if ($LASTEXITCODE -ne 0) { Fail "Hell's Gate ReXGlue SDK patch failed." }
