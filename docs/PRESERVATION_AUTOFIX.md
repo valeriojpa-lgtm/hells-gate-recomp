@@ -45,6 +45,30 @@ addresses seen in RUN00(5).
 The original VIV archives are validated by expected size by the portable
 builder and are never committed.
 
+## Historical regression match
+
+The canonical entrypoint ledger is not an arbitrary collection. A direct
+comparison against upstream tag `v0.6.4-beta` shows that the release manifest
+contains exactly **339 function entrypoints**, and
+`upstream_function_seeds.txt` contains exactly the same 339-address set.
+
+This matters because upstream's release history records the same failure chain:
+
+- `v0.6.3-beta` explicitly restored TU2 entrypoints including
+  `0x8236E3C0` and `0x825D2C30`.
+- `v0.6.4-beta` added the remaining TU2/codegen coverage, patched all known
+  setjmp/longjmp sites and reported zero remaining generated unresolved traps.
+- Upstream issue #55 reported a black screen after selecting difficulty on
+  v0.6.0; the reporter later confirmed a clean v0.6.4-beta install worked.
+
+The preservation auditor fingerprints the canonical v0.6.4 function ledger
+(`0x2F1669F5BE191238` using the auditor's FNV-1a canonicalization) so a future
+regeneration cannot silently substitute a different 339-address set.
+
+This does **not** prove our next runtime will pass: it proves that the known
+function-coverage baseline that fixed the historical TU2 regression has been
+restored exactly. Runtime GATE 2 still requires real execution evidence.
+
 ## RUN00(5) finding
 
 Two runtime targets dominated the failure:
