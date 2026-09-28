@@ -4273,7 +4273,7 @@ diff --git a/src/core/logging.cpp b/src/core/logging.cpp
  
    int max_seq = 0;
    std::string prefix = std::string(app_name) + "_";
-@@ -225,13 +234,20 @@ void InitLogging(const LogConfig& config) {
+@@ -225,13 +234,19 @@ void InitLogging(const LogConfig& config) {
                                            : std::filesystem::path(config.log_dir);
      resolved_path = NextSequentialLogPath(log_dir, config.app_name).string();
    }
@@ -4302,7 +4302,7 @@ diff --git a/src/core/logging.cpp b/src/core/logging.cpp
 diff --git a/src/ui/rex_app.cpp b/src/ui/rex_app.cpp
 --- a/src/ui/rex_app.cpp
 +++ b/src/ui/rex_app.cpp
-@@ -166,10 +166,14 @@ bool ReXApp::SetupEnvironment() {
+@@ -166,8 +166,12 @@ bool ReXApp::SetupEnvironment() {
    auto log_config = rex::BuildLogConfig(log_file_cvar.empty() ? nullptr : log_file_cvar.c_str(),
                                          log_level_str, category_levels);
    if (log_file_cvar.empty()) {
