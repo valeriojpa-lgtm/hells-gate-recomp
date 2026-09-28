@@ -311,7 +311,11 @@ def source_checks(root: Path) -> list[Check]:
         and "detect_disc_languages.py" in builder
         and "disc-languages.json" in builder
         and "--user_language=__BASE_LANGUAGE_ID__" in builder
+        and "--user_country=__BASE_COUNTRY_ID__" in builder
         and "base_language_id" in builder
+        and "base_country_id" in builder
+        and "5 = 31" in builder
+        and "1 = 103" in builder
         and "canonical_manifest_git_blob" in builder
         and 'runtime = "UNVERIFIED"' in builder
         and "RUN 00 BUILD PASS" not in builder
