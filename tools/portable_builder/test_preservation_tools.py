@@ -130,6 +130,23 @@ Unhandled guest access violation: read of guest 0x000001A4
         self.assertEqual(gate(r, "GATE-3")["status"], "PASS")
         self.assertTrue(any("runtime fault evidence" in x for x in r["diagnosis"]))
 
+    def test_historical_tu2_signature_is_classified(self):
+        data = BASE + """
+[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=0 hash=0x6666
+Call to invalid or unregistered function at guest address 0x8236E3C0
+"""
+        r = runlog.report(data)
+        ids = {item["id"] for item in r["historical_matches"]}
+        self.assertIn("upstream-v0.6.3-v0.6.4-tu2-black-screen", ids)
+
+    def test_xexp_signature_mismatch_is_classified(self):
+        data = BASE + """
+XEX patch signature hash doesn't match expected digest
+"""
+        r = runlog.report(data)
+        ids = {item["id"] for item in r["historical_matches"]}
+        self.assertIn("upstream-issue-51-xexp-signature-mismatch", ids)
+
 class ScannerPolicyTests(unittest.TestCase):
     def test_sdk_patch_uses_data_section_scanner_not_generic_wip_scanner(self):
         repo_root = HERE.parents[1]
