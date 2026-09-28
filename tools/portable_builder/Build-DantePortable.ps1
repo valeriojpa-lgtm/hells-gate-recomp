@@ -510,11 +510,11 @@ if not exist "%GAME%\default.xex" (
 rem Prefer fully portable state beside the executable, but never require
 rem write access to the installation directory. Program Files and other
 rem protected locations transparently fall back to LocalAppData.
-set "STATE_ROOT=%~dp0userdata"
+set "STATE_ROOT=%~dp0userdata_base"
 if not exist "!STATE_ROOT!" mkdir "!STATE_ROOT!" >nul 2>&1
 > "!STATE_ROOT!\.preservation_write_test" echo writable 2>nul
 if errorlevel 1 (
-  set "STATE_ROOT=%LOCALAPPDATA%\HellsGatePreservation\RUN00"
+  set "STATE_ROOT=%LOCALAPPDATA%\HellsGatePreservation\RUN00-base"
   if not exist "!STATE_ROOT!" mkdir "!STATE_ROOT!" >nul 2>&1
   echo Portable directory is read-only; using "!STATE_ROOT!" for user data and logs.
 ) else (
@@ -643,7 +643,7 @@ Branch target: preservation-autofix
 ReXGlue SDK: v0.10.0 + project patch
 Codegen: SKU-adaptive discovery from this exact XEX + sibling TU2
 Renderer: D3D12 / Xenos (native renderer disabled for baseline)
-User/cache root: portable userdata when writable; LocalAppData fallback otherwise
+User/cache root: isolated base-campaign userdata_base; LocalAppData RUN00-base fallback otherwise
 RUN00 launcher: RTX adapter 1 + official-compatible Xenos/D3D12 ROV + 60 Hz VSync + debug log
 
 Input default.xex SHA-256:  $xexHash
