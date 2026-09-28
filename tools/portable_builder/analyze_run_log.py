@@ -27,9 +27,19 @@ UNRESOLVED_PATTERNS = (
         re.I,
     ),
 )
-SWAP_RE = re.compile(
+LEGACY_SWAP_RE = re.compile(
     r"\[GPU SwapGuest\].*?ptr=0x([0-9A-Fa-f]+).*?bytes=(\d+).*?"
     r"nonzero=(\d+).*?hash=0x([0-9A-Fa-f]+)",
+    re.I,
+)
+GUEST_OUTPUT_CAPTURE_RE = re.compile(
+    r"\[GPU GuestOutputCapture\]\s+frame=(\d+)\s+width=(\d+)\s+"
+    r"height=(\d+)\s+stride=(\d+)\s+bytes=(\d+)\s+nonzero=(\d+)\s+"
+    r"hash=0x([0-9A-Fa-f]+)",
+    re.I,
+)
+GUEST_OUTPUT_CAPTURE_FAIL_RE = re.compile(
+    r"\[GPU GuestOutputCapture\]\s+frame=(\d+)\s+capture_failed",
     re.I,
 )
 VDSWAP_RE = re.compile(r"\bVdSwap:.*?(\d+)x(\d+)", re.I)
@@ -137,16 +147,33 @@ def report(data: str) -> dict:
     unresolved = unresolved_targets(data)
     total = sum(unresolved.values())
 
-    swaps = [
+    legacy_swaps = [
         {
             "ptr": f"0x{int(match.group(1), 16):08X}",
             "bytes": int(match.group(2)),
             "nonzero": int(match.group(3)),
             "hash": "0x" + match.group(4).upper(),
         }
-        for match in SWAP_RE.finditer(data)
+        for match in LEGACY_SWAP_RE.finditer(data)
     ]
-    nonzero = [sample for sample in swaps if sample["nonzero"] > 0]
+    captures = [
+        {
+            "frame": int(match.group(1)),
+            "width": int(match.group(2)),
+            "height": int(match.group(3)),
+            "stride": int(match.group(4)),
+            "bytes": int(match.group(5)),
+            "nonzero": int(match.group(6)),
+            "hash": "0x" + match.group(7).upper(),
+        }
+        for match in GUEST_OUTPUT_CAPTURE_RE.finditer(data)
+    ]
+    capture_failures = [
+        int(match.group(1))
+        for match in GUEST_OUTPUT_CAPTURE_FAIL_RE.finditer(data)
+    ]
+    capture_nonzero = [sample for sample in captures if sample["nonzero"] > 0]
+    capture_max_frame = max((sample["frame"] for sample in captures), default=0)
     vds = [(int(a), int(b)) for a, b in VDSWAP_RE.findall(data)]
     regs = [
         int(re.sub(r"[^0-9]", "", match.group(1)))
@@ -170,7 +197,7 @@ def report(data: str) -> dict:
         )
     ]
 
-    progress = bool(vds or swaps)
+    progress = bool(vds or captures or legacy_swaps)
     if not progress:
         gate2_status = "INCONCLUSIVE"
         gate2_summary = (
@@ -201,31 +228,46 @@ def report(data: str) -> dict:
             Gate(
                 "GATE-3",
                 "BLOCKED",
-                "framebuffer gate blocked until GATE-2 passes",
+                "presenter-output gate blocked until GATE-2 passes",
                 [
-                    f"SwapGuest samples={len(swaps)}; "
-                    f"non-zero={len(nonzero)}"
+                    f"guest-output captures={len(captures)}; "
+                    f"non-zero={len(capture_nonzero)}; "
+                    f"legacy SwapGuest samples={len(legacy_swaps)}"
                 ],
             )
         )
-    elif nonzero:
-        best = max(nonzero, key=lambda sample: sample["nonzero"])
+    elif capture_nonzero:
+        best = max(capture_nonzero, key=lambda sample: sample["nonzero"])
         gates.append(
             Gate(
                 "GATE-3",
                 "PASS",
-                f"guest framebuffer became non-zero "
-                f"({best['nonzero']} sampled bytes)",
-                [f"{best['ptr']} {best['hash']}"],
+                f"actual D3D12 guest output became non-zero at frame "
+                f"{best['frame']} ({best['nonzero']} non-zero bytes)",
+                [
+                    f"{best['width']}x{best['height']} stride={best['stride']} "
+                    f"{best['hash']}"
+                ],
             )
         )
-    elif swaps:
+    elif captures and capture_max_frame >= 512:
         gates.append(
             Gate(
                 "GATE-3",
                 "FAIL",
-                f"all {len(swaps)} sampled guest framebuffers remained zero",
-                [],
+                f"actual D3D12 guest output remained zero through capture "
+                f"frame {capture_max_frame}",
+                [f"captures={len(captures)}; failures={len(capture_failures)}"],
+            )
+        )
+    elif captures:
+        gates.append(
+            Gate(
+                "GATE-3",
+                "INCONCLUSIVE",
+                f"actual guest output is zero in {len(captures)} early capture(s), "
+                f"latest frame={capture_max_frame}; diagnostic horizon is frame 512",
+                [f"capture failures={len(capture_failures)}"],
             )
         )
     else:
@@ -233,8 +275,11 @@ def report(data: str) -> dict:
             Gate(
                 "GATE-3",
                 "INCONCLUSIVE",
-                "GATE-2 passed but no SwapGuest sample was logged",
-                [],
+                "GATE-2 passed but no authoritative GuestOutputCapture sample was logged",
+                [
+                    "legacy SwapGuest memory samples are non-authoritative for "
+                    "D3D12 presentation"
+                ] if legacy_swaps else [],
             )
         )
 
@@ -272,15 +317,21 @@ def report(data: str) -> dict:
             f"coverage ({access_violations} access-violation marker(s), "
             f"{fatal_markers} fatal/assert marker(s))."
         )
-    elif progress and swaps and not nonzero:
+    elif capture_nonzero:
         diagnosis.append(
-            "PRIMARY NEXT: guest framebuffer is still zero after dispatch "
-            "coverage passed; renderer/shader/resolve investigation is unlocked."
+            "Actual presenter output is non-zero; any remaining black-screen "
+            "symptom is downstream of guest-output generation/presentation."
         )
-    elif nonzero:
+    elif captures and capture_max_frame >= 512:
         diagnosis.append(
-            "Framebuffer production is alive; any visual failure is downstream "
-            "of guest framebuffer generation."
+            "PRIMARY NEXT: authoritative D3D12 presenter output remained zero "
+            "through the diagnostic horizon; renderer/shader/resolve investigation "
+            "is unlocked."
+        )
+    elif captures:
+        diagnosis.append(
+            "Authoritative presenter captures are still zero, but the diagnostic "
+            "horizon has not been reached; do not promote this to renderer failure yet."
         )
     else:
         diagnosis.append(
@@ -302,6 +353,17 @@ def report(data: str) -> dict:
         diagnosis.append(
             f"FILESYSTEM: {observations['filesystem_errors']} possible "
             "file/path failure line(s) observed."
+        )
+    if legacy_swaps:
+        diagnosis.append(
+            "LEGACY RENDER DIAGNOSTIC: SwapGuest sampled raw guest memory that "
+            "D3D12 IssueSwap does not use as the authoritative presentation source; "
+            "those samples are retained for history only."
+        )
+    if capture_failures:
+        diagnosis.append(
+            f"RENDER CAPTURE: {len(capture_failures)} authoritative guest-output "
+            "capture attempt(s) failed."
         )
 
     observed_names = [
@@ -373,8 +435,14 @@ def report(data: str) -> dict:
         "fiber_callback_cleared": bool(FIBER_RE.search(data)),
         "vdswap_count": len(vds),
         "vdswap_sizes": sorted({f"{a}x{b}" for a, b in vds}),
-        "swapguest_samples": len(swaps),
-        "swapguest_nonzero_samples": len(nonzero),
+        "guest_output_capture_samples": len(captures),
+        "guest_output_capture_nonzero_samples": len(capture_nonzero),
+        "guest_output_capture_max_frame": capture_max_frame,
+        "guest_output_capture_failures": capture_failures,
+        "legacy_swapguest_samples": len(legacy_swaps),
+        "legacy_swapguest_nonzero_samples": sum(
+            1 for sample in legacy_swaps if sample["nonzero"] > 0
+        ),
         "vfetch_oob_count": vfetch_count,
         "access_violation_marker_count": access_violations,
         "fatal_assert_marker_count": fatal_markers,
@@ -382,7 +450,7 @@ def report(data: str) -> dict:
     }
 
     return {
-        "schema": 2,
+        "schema": 3,
         "audit": "dantes-inferno-runtime-gates",
         "metrics": metrics,
         "gates": [asdict(gate) for gate in gates],
