@@ -441,7 +441,7 @@ if not exist "%GAME%\default.xex" (
 if not exist logs mkdir logs
 set "USERDATA=%~dp0userdata"
 if not exist "%USERDATA%" mkdir "%USERDATA%"
-"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="%USERDATA%" --gpu_backend=d3d12 --d3d12_adapter=1 --log_level=debug --log_file="%~dp0logs\RUN00.log"
+"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="%USERDATA%" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --log_level=debug --log_file="%~dp0logs\RUN00.log"
 exit /b %ERRORLEVEL%
 '@
     Set-Content -Encoding ASCII -LiteralPath (Join-Path $PackageDir "LAUNCH_RUN00.cmd") -Value $launch
@@ -458,7 +458,7 @@ ReXGlue SDK: v0.10.0 + project patch
 Codegen: SKU-adaptive discovery from this exact XEX + sibling TU2
 Renderer: D3D12 / Xenos (native renderer disabled for baseline)
 User/cache root: package-local userdata (no upstream shader-cache seed)
-RUN00 launcher: adapter 1 + debug logging for current RTX black-screen investigation
+RUN00 launcher: RTX adapter 1 + official-compatible Xenos/D3D12 ROV + 60 Hz VSync + debug log
 
 Input default.xex SHA-256:  $xexHash
 Input default.xexp SHA-256: $xexpHash
