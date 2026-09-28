@@ -74,6 +74,47 @@ def collect_unresolved() -> set[int]:
     return targets
 
 
+def add_targets(target_tokens: list[str]) -> int:
+    manifest = read_text(MANIFEST)
+    existing = {int(x, 16) for x in ENTRY_RE.findall(manifest)}
+    new_targets: list[int] = []
+
+    for token in target_tokens:
+        token = token.strip()
+        if token.lower().startswith("0x"):
+            token = token[2:]
+        try:
+            address = int(token, 16)
+        except ValueError:
+            print(f"WARNING: ignoring invalid target token: {token}", file=sys.stderr)
+            continue
+
+        if not (0x82000000 <= address < 0x83000000):
+            print(f"WARNING: ignoring target outside title image: 0x{address:08X}", file=sys.stderr)
+            continue
+        if address in existing:
+            continue
+
+        existing.add(address)
+        new_targets.append(address)
+
+    if new_targets:
+        if not manifest.endswith("\n"):
+            manifest += "\n"
+        manifest += "\n# Auto-promoted validation targets for this exact XEX/TU.\n"
+        for address in sorted(new_targets):
+            manifest += (
+                f"\n[entrypoint.functions.0x{address:08X}]\n"
+                f'name = "q01_bootstrap_{address:08X}"\n'
+            )
+        write_text(MANIFEST, manifest)
+
+    for address in sorted(new_targets):
+        print(f"  + validation target 0x{address:08X}")
+    print(f"ADDED={len(new_targets)}")
+    return len(new_targets)
+
+
 def close_manifest() -> None:
     if not os.path.isdir(GEN_DIR):
         print(f"ERROR: generated directory not found: {GEN_DIR}", file=sys.stderr)
@@ -105,15 +146,19 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--reset", action="store_true")
     parser.add_argument("--close", action="store_true")
+    parser.add_argument("--add-targets", nargs="*", metavar="HEX")
     args = parser.parse_args()
 
-    if args.reset == args.close:
-        parser.error("choose exactly one of --reset or --close")
+    chosen = int(args.reset) + int(args.close) + int(args.add_targets is not None)
+    if chosen != 1:
+        parser.error("choose exactly one of --reset, --close, or --add-targets")
 
     if args.reset:
         reset_manifest()
-    else:
+    elif args.close:
         close_manifest()
+    else:
+        add_targets(args.add_targets)
     return 0
 
 
