@@ -3393,13 +3393,27 @@ diff --git a/src/kernel/xam/xam_content.cpp b/src/kernel/xam/xam_content.cpp
 index 1fb1e16..6a1df0a 100644
 --- a/src/kernel/xam/xam_content.cpp
 +++ b/src/kernel/xam/xam_content.cpp
+@@ -100,6 +100,12 @@ u32 xeXamContentCreate(u32 user_index, mapped_string root_name, mapped_void cont
+   } else {
+     assert_always();
+     return X_ERROR_INVALID_PARAMETER;
+   }
++
++  REXKRNL_INFO("XamContentCreate: root='{}' saved={} type={:#X} file='{}' flags={:#X}",
++               root_name ? std::string(root_name) : std::string("(null)"),
++               content_data.content_type == XContentType::kSavedGame ? 1 : 0,
++               uint32_t(content_data.content_type), content_data.file_name(), flags);
+ 
+   if (content_data.content_type == XContentType::kMarketplaceContent) {
+     xuid = 0;
 @@ -231,8 +231,11 @@ u32 xeXamContentCreate(u32 user_index, mapped_string root_name, mapped_void cont
  
    if (!overlapped_ptr) {
      uint32_t extended_error, length;
 -    return run(extended_error, length);
 +    auto result = run(extended_error, length);
-+    REXKRNL_INFO("XamContentCreateEx: sync result={:#X}", uint32_t(result));
++    REXKRNL_INFO("XamContentCreateEx: sync result={:#X} disposition={}",
++                 uint32_t(result), disposition_ptr ? uint32_t(*disposition_ptr) : 0u);
 +    return result;
    } else {
 +    REXKRNL_INFO("XamContentCreateEx: async (overlapped={:#X})", overlapped_ptr.guest_address());
@@ -3416,6 +3430,15 @@ index 1fb1e16..6a1df0a 100644
    return xeXamContentCreate(user_index, root_name, content_data_ptr, sizeof(XCONTENT_DATA), flags,
                              disposition_ptr, license_mask_ptr, cache_size, content_size,
                              overlapped_ptr);
+@@ -282,6 +291,9 @@ u32 XamContentClose_entry(mapped_string root_name, mapped_void overlapped_ptr) {
+   // Closes a previously opened root from XamContentCreate*.
+   auto result = REX_KERNEL_STATE()->content_manager()->CloseContent(root_name.value());
++  REXKRNL_INFO("XamContentClose: root='{}' result={:#X}",
++               root_name ? std::string(root_name) : std::string("(null)"),
++               uint32_t(result));
+ 
+   if (overlapped_ptr) {
+     REX_KERNEL_STATE()->CompleteOverlappedImmediate(overlapped_ptr.guest_address(), result);
 diff --git a/src/kernel/xam/xam_content_device.cpp b/src/kernel/xam/xam_content_device.cpp
 index f153b69..b96ef96 100644
 --- a/src/kernel/xam/xam_content_device.cpp
