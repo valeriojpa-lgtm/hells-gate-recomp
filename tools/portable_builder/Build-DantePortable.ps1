@@ -14,6 +14,8 @@ $GameDir     = Join-Path $ProjectRoot "game"
 $SdkDir      = Join-Path $ProjectRoot "thirdparty\rexglue-sdk"
 $BuildDir    = Join-Path $ProjectRoot "out\q01"
 $PackageDir  = Join-Path $ProjectRoot "out\portable\Dantes_Inferno_RUN00"
+$DiscLanguageReport = Join-Path $BuildDir "disc-languages.json"
+$BaseLanguageId = 1
 
 New-Item -ItemType Directory -Force -Path $Portable,$Downloads,$Logs | Out-Null
 $Transcript = Join-Path $Logs "portable_builder.log"
@@ -205,6 +207,44 @@ function Bootstrap-Tools {
     Write-Host "Ninja:  $(& ninja --version)" -ForegroundColor DarkGray
     Write-Host "Python: $(& python --version)" -ForegroundColor DarkGray
     Write-Host "Clang:  $((& clang --version | Select-Object -First 1))" -ForegroundColor DarkGray
+}
+
+function Detect-DiscLanguages {
+    Step "[3.5/7] Detect languages actually present in preserved VIV archives"
+    New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+
+    $detector = Join-Path $ProjectRoot "tools\portable_builder\detect_disc_languages.py"
+    if (-not (Test-Path -LiteralPath $detector)) {
+        Fail "Missing disc language detector: $detector"
+    }
+
+    & python $detector $GameDir --json $DiscLanguageReport
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Disc language detection failed."
+    }
+
+    $script:BaseLanguageId = 1
+    try {
+        $detected = Get-Content -Raw -LiteralPath $DiscLanguageReport | ConvertFrom-Json
+        if ($detected.found -and $detected.manifest -and $detected.manifest.text_languages) {
+            $ids = @($detected.manifest.text_languages | ForEach-Object { [int]$_.id })
+            if ($ids -contains 1) {
+                $script:BaseLanguageId = 1
+            } elseif ($ids.Count -gt 0) {
+                $script:BaseLanguageId = $ids[0]
+            }
+            $labels = @($detected.manifest.text_languages | ForEach-Object {
+                "$($_.name) (ID $($_.id))"
+            })
+            Write-Host ("Disc text languages: " + ($labels -join ", ")) -ForegroundColor Green
+            Write-Host "Base RUN language ID: $script:BaseLanguageId" -ForegroundColor Green
+        } else {
+            Write-Host "No authoritative VIV language manifest found; base RUN keeps English ID 1." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "Could not parse disc-languages.json; base RUN keeps English ID 1." -ForegroundColor Yellow
+        $script:BaseLanguageId = 1
+    }
 }
 
 function Repair-LibmspackWindowsLinks {
@@ -476,6 +516,9 @@ function Package-Run00 {
     # Ship the runtime gate parser and the build-time static evidence with the
     # package. The parser contains no game data and can run after every launch.
     Copy-Item -Force (Join-Path $ProjectRoot "tools\portable_builder\analyze_run_log.py") $PackageDir
+    if (Test-Path -LiteralPath $DiscLanguageReport) {
+        Copy-Item -Force $DiscLanguageReport (Join-Path $PackageDir "disc-languages.json")
+    }
     foreach ($report in @("preservation-static.json","preservation-static.md")) {
         $src = Join-Path $BuildDir $report
         if (Test-Path -LiteralPath $src) { Copy-Item -Force $src $PackageDir }
@@ -535,7 +578,7 @@ if errorlevel 1 (
 )
 del /q "!LOGDIR!\.preservation_write_test" >nul 2>&1
 
-"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="!USERDATA!" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --enable_dlc=false --log_level=debug --log_file="!LOGDIR!\RUN00.log"
+"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="!USERDATA!" --gpu_backend=d3d12 --d3d12_adapter=1 --renderer=xenos --render_target_path_d3d12=rov --vsync=true --d3d12_host_vsync=true --video_mode_refresh_rate=60 --input_backend=sdl --enable_dlc=false --user_language=__BASE_LANGUAGE_ID__ --log_level=debug --log_file="!LOGDIR!\RUN00.log"
 set "GAME_EXIT=%ERRORLEVEL%"
 
 rem Analyze every RUN automatically. Prefer the builder's portable Python when
@@ -560,6 +603,7 @@ if exist "!LOGDIR!\RUN00.report.md" (
 )
 exit /b %GAME_EXIT%
 '@
+    $launch = $launch.Replace("__BASE_LANGUAGE_ID__", [string]$BaseLanguageId)
     Set-Content -Encoding ASCII -LiteralPath (Join-Path $PackageDir "LAUNCH_RUN00.cmd") -Value $launch
 
     $xexHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $GameDir "default.xex")).Hash.ToLowerInvariant()
@@ -593,6 +637,9 @@ exit /b %GAME_EXIT%
     $staticAuditHash = if (Test-Path -LiteralPath $staticAuditPath) {
         (Get-FileHash -Algorithm SHA256 -LiteralPath $staticAuditPath).Hash.ToLowerInvariant()
     } else { $null }
+    $discLanguageHash = if (Test-Path -LiteralPath $DiscLanguageReport) {
+        (Get-FileHash -Algorithm SHA256 -LiteralPath $DiscLanguageReport).Hash.ToLowerInvariant()
+    } else { $null }
 
     $provenance = [ordered]@{
         schema = 1
@@ -607,6 +654,8 @@ exit /b %GAME_EXIT%
             media_id = "49028C6A"
             default_xex_sha256 = $xexHash
             default_xexp_sha256 = $xexpHash
+            base_language_id = $BaseLanguageId
+            disc_languages_sha256 = $discLanguageHash
         }
         sdk = [ordered]@{
             tag = "v0.10.0"
@@ -645,6 +694,8 @@ Codegen: SKU-adaptive discovery from this exact XEX + sibling TU2
 Renderer: D3D12 / Xenos (native renderer disabled for baseline)
 User/cache root: isolated base-campaign userdata_base; LocalAppData RUN00-base fallback otherwise
 RUN00 launcher: RTX adapter 1 + official-compatible Xenos/D3D12 ROV + 60 Hz VSync + debug log
+Base language ID: $BaseLanguageId (selected from authoritative VIV manifest when available)
+Disc language report: disc-languages.json
 
 Input default.xex SHA-256:  $xexHash
 Input default.xexp SHA-256: $xexpHash
@@ -683,6 +734,7 @@ try {
     Bootstrap-Tools
     Prepare-Sdk
     Clean-Generated
+    Detect-DiscLanguages
     Build-Project
     Package-Run00
     exit 0
