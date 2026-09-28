@@ -164,8 +164,10 @@ class ManifestTests(unittest.TestCase):
         text, added = manifest.build_reset_manifest_text()
         self.assertEqual(added, [])
         self.assertEqual(text, canonical)
-        self.assertIn('name = "unresolved_target_8236E3C0"', canonical)
         self.assertIn("[entrypoint.functions.0x8236E3C0]", canonical)
+        # This critical TU2 entry is intentionally unnamed upstream. Keeping
+        # it unnamed makes ReXGlue emit the default sub_8236E3C0 symbol.
+        self.assertIsNone(audit.manifest_function_names(canonical)[0x8236E3C0])
 
     def test_runtime_learning_does_not_duplicate_canonical_targets(self):
         old_runtime = manifest.RUNTIME_SEEDS
@@ -193,15 +195,18 @@ class ManifestTests(unittest.TestCase):
         self.assertIn("UltrawideAspectHook", manifest.load_canonical_manifest())
 
     def test_append_targets_is_cumulative_and_deduplicated(self):
+        canonical = manifest.load_canonical_manifest()
+        new_targets = {0x82ABC000, 0x82ABC100}
+        self.assertTrue(new_targets.isdisjoint(manifest.manifest_addresses(canonical)))
         text, added = manifest.append_targets(
-            manifest.load_canonical_manifest(),
-            {0x8236E3C0, 0x825D2C30},
+            canonical,
+            new_targets,
             "test",
         )
-        self.assertEqual(added, [0x8236E3C0, 0x825D2C30])
+        self.assertEqual(added, [0x82ABC000, 0x82ABC100])
         text2, added2 = manifest.append_targets(
             text,
-            {0x8236E3C0, 0x825D2C30},
+            new_targets,
             "test",
         )
         self.assertEqual(added2, [])
