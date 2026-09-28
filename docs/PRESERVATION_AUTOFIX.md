@@ -6,8 +6,10 @@ florinp93/hells-gate-recomp and ReXGlue v0.10.0.
 ## Why it exists
 
 RUN00(5) proved that TU2 loads and the D3D12 renderer reaches the guest swap
-path, but the guest framebuffer remained zero while runtime dispatch repeatedly
-reached unregistered guest functions.
+path while runtime dispatch repeatedly reached unregistered guest functions.
+Its old `SwapGuest` diagnostic also sampled zeroed raw guest memory, but later
+renderer audit proved that pointer is **not** the authoritative D3D12
+presentation source; GATE 3 no longer uses it.
 
 The previous Q01 "minimal manifest" strategy was wrong for this title: static
 closure cannot rediscover every vtable / computed / indirect target. Upstream
@@ -80,9 +82,13 @@ Both were already present in the upstream Hell's Gate manifest. The old
 minimal-manifest reset discarded them. That explains how an executable could
 compile yet run with missing guest logic.
 
-The same log showed `VdSwap` at 1280x720 while every sampled `SwapGuest`
-frontbuffer block was zero. `VFETCH-OOB` remains diagnostic/secondary until
-GATE 2 is proven.
+The same log showed `VdSwap` at 1280x720 while every old `SwapGuest`
+raw-memory sample was zero. D3D12 `IssueSwap` actually presents the resource
+resolved through `TextureFetch(0) -> RequestSwapTexture()`, so those samples
+are retained only as historical evidence. The preservation branch now uses
+`Presenter::CaptureGuestOutput()` to read back the actual image submitted by
+the presenter. `VFETCH-OOB` remains diagnostic/secondary until GATE 2 is
+proven.
 
 ## XEX / XEXP during codegen
 
@@ -182,7 +188,31 @@ The RUN launcher executes it automatically and writes:
 
 The parser is conservative: absence of an error in a short log is not a PASS.
 GATE 2 needs runtime progress plus zero unresolved guest dispatches. GATE 3 is
-blocked until GATE 2 passes.
+blocked until GATE 2 passes and is based only on authoritative presenter
+readbacks. Captures are scheduled at frames 1, 2, 3, 4, 8, 16, 32, 64, 128,
+256 and 512 until a non-zero image appears. Early zero frames are
+`INCONCLUSIVE`; zero output through frame 512 is a GATE 3 failure.
+
+RUN reports also contain a `BASELINE-PURITY` subgate. A base-campaign RUN
+must show DLC disabled and must not install/mirror DLC or seed a foreign shader
+cache.
+
+## Base-campaign isolation
+
+GATE 0-11 deliberately run without DLC contamination:
+
+- `enable_dlc=false` is the default and RUN00 forces it explicitly;
+- base state uses `userdata_base` (or LocalAppData `RUN00-base`);
+- DLC auto-install is deferred to GATE 12;
+- runtime analysis fails the `BASELINE-PURITY` subgate if DLC mutation or
+  shader-cache seeding is observed.
+
+Language selection is also data-driven rather than guessed from XEX region
+flags. `detect_disc_languages.py` ports upstream's BIGH/VIV manifest parser.
+The base RUN chooses English when present, otherwise the first text language
+actually declared by the disc, and pairs it with upstream's matching Xbox
+country ID. Spanish is language ID 5 / country ID 31, but GATE 10 will only
+attempt Spanish when the VIV manifest actually declares ID 5.
 
 ## SDK patch reproducibility
 
@@ -216,7 +246,7 @@ not detected.
 | 0 | inputs/hash/TU | Automated; last runtime evidence showed 0.0.0.1 -> 0.0.2.1 |
 | 1 | complete codegen | Automated build gate; must register all preserved seeds |
 | 2 | zero unresolved guest functions | **Last known RUN00(5): FAIL**; new cumulative strategy awaiting runtime evidence |
-| 3 | framebuffer non-zero | BLOCKED by GATE 2 |
+| 3 | actual D3D12 presenter output non-zero | BLOCKED by GATE 2; authoritative readback instrumentation ready |
 | 4 | intro/menu | UNVERIFIED |
 | 5 | input/menu navigation | UNVERIFIED |
 | 6 | New Game | UNVERIFIED |
