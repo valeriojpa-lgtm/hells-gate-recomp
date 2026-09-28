@@ -347,6 +347,10 @@ def main():
 
     remaining = count_remaining_fatals(files, contents)
     print(f"== Done. Remaining REX_FATAL unresolved traps: {remaining} ==")
+    if remaining:
+        print("ERROR: refusing to build a Q01 executable with unresolved direct guest traps.",
+              file=sys.stderr)
+        sys.exit(3)
 
 if __name__ == '__main__':
     main()
