@@ -6,9 +6,6 @@ import glob
 
 RECOMP_GLOB = 'dantes_inferno_recomp.*.cpp'
 
-KNOWN_SETJMP = ('sub_82879110', 'sub_82701240')
-KNOWN_LONGJMP = ('sub_82878CD0', 'sub_82700CE0')
-
 FUNC_START_RE = re.compile(r'DEFINE_REX_FUNC\((\w+)\) \{\n')
 
 def read(path):
@@ -57,14 +54,6 @@ def scan_generated(gen_dir):
                 setjmp_names.append(name)
             elif is_longjmp_body(body):
                 longjmp_names.append(name)
-    for cand in KNOWN_SETJMP:
-        if cand not in setjmp_names and any(
-                f'DEFINE_REX_FUNC({cand})' in c for c in contents.values()):
-            setjmp_names.append(cand)
-    for cand in KNOWN_LONGJMP:
-        if cand not in longjmp_names and any(
-                f'DEFINE_REX_FUNC({cand})' in c for c in contents.values()):
-            longjmp_names.append(cand)
     return files, contents, setjmp_names, longjmp_names
 
 def patch_setjmp_body(body, name):
@@ -326,55 +315,14 @@ def patch_unresolved(files, contents, gen_dir):
             print(f"    {t}")
 
 def patch_language_fallback(files, contents):
-    """Phase 3: when the requested language ID is absent from the game's
-    runtime tables, retry the lookup with English (id 1) so unsupported
-    selections fall back to English instead of record 0 (Italian on the
-    pal_it SKU)."""
+    """Q01 deliberately skips the old fixed-address TU2 language fallback.
+
+    The upstream address belongs to a specific retail executable revision.
+    Language fallback will be reintroduced only after locating the equivalent
+    routine by signature in the user's own generated code.
+    """
     print("== Phase 3: unsupported-language fallback ==")
-    anchor = 'loc_823C2504:\n'
-    inject = (
-        '\t{\n'
-        '\t\tuint32_t lang_tbl = REX_LOAD_U32(ctx.r31.u32 + 32);\n'
-        '\t\tif (lang_tbl) {\n'
-        '\t\t\tif (ctx.r7.s32 < 0) {\n'
-        '\t\t\t\tuint32_t cnt = REX_LOAD_U32(lang_tbl + 232);\n'
-        '\t\t\t\tuint32_t arr = REX_LOAD_U32(lang_tbl + 240);\n'
-        '\t\t\t\tfor (uint32_t i = 0; arr && i < cnt; ++i)\n'
-        '\t\t\t\t\tif ((int32_t)REX_LOAD_U32(arr + i * 100 + 64) == 1) {\n'
-        '\t\t\t\t\t\tctx.r7.u64 = i;\n'
-        '\t\t\t\t\t\tbreak;\n'
-        '\t\t\t\t\t}\n'
-        '\t\t\t}\n'
-        '\t\t\tif (ctx.r30.s32 < 0) {\n'
-        '\t\t\t\tuint32_t cnt = REX_LOAD_U32(lang_tbl + 228);\n'
-        '\t\t\t\tuint32_t arr = REX_LOAD_U32(lang_tbl + 236);\n'
-        '\t\t\t\tfor (uint32_t i = 0; arr && i < cnt; ++i)\n'
-        '\t\t\t\t\tif ((int32_t)REX_LOAD_U32(arr + i * 104 + 64) == 1) {\n'
-        '\t\t\t\t\t\tctx.r30.u64 = i;\n'
-        '\t\t\t\t\t\tbreak;\n'
-        '\t\t\t\t\t}\n'
-        '\t\t\t}\n'
-        '\t\t}\n'
-        '\t}\n')
-    done = False
-    for filepath in files:
-        content = contents[filepath]
-        if anchor not in content:
-            continue
-        if 'LANGFALLBACK' in content or inject in content:
-            print(f"  already applied ({os.path.basename(filepath)})")
-            done = True
-            continue
-        new, n = re.subn(re.escape(anchor), anchor + inject, content, count=1)
-        if n:
-            contents[filepath] = new
-            write(filepath, new)
-            print(f"  Applied: en-fallback at loc_823C2504 "
-                  f"({os.path.basename(filepath)})")
-            done = True
-    if not done:
-        print("  WARNING: loc_823C2504 anchor not found "
-              "(only exists in TU2 codegen)")
+    print("  skipped in SKU-adaptive Q01 (no foreign fixed guest address)")
 
 def count_remaining_fatals(files, contents):
     total = 0
