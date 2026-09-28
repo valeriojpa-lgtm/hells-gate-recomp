@@ -535,6 +535,8 @@ function Package-Run00 {
     # Ship the runtime gate parser and the build-time static evidence with the
     # package. The parser contains no game data and can run after every launch.
     Copy-Item -Force (Join-Path $ProjectRoot "tools\portable_builder\analyze_run_log.py") $PackageDir
+    Copy-Item -Force (Join-Path $ProjectRoot "tools\portable_builder\compare_run_reports.py") $PackageDir
+    Copy-Item -Force (Join-Path $ProjectRoot "tools\portable_builder\run005_baseline.json") $PackageDir
     if (Test-Path -LiteralPath $DiscLanguageReport) {
         Copy-Item -Force $DiscLanguageReport (Join-Path $PackageDir "disc-languages.json")
     }
@@ -604,19 +606,30 @@ rem Analyze every RUN automatically. Prefer the builder's portable Python when
 rem this package is still inside the repository; fall back to the Python launcher.
 set "PROJECT_PY=%~dp0..\..\..\.portable\python\python.exe"
 set "ANALYZER=%~dp0analyze_run_log.py"
+set "COMPARATOR=%~dp0compare_run_reports.py"
+set "RUN005_BASELINE=%~dp0run005_baseline.json"
 if exist "%PROJECT_PY%" (
   "%PROJECT_PY%" "%ANALYZER%" "!LOGDIR!\RUN00.log" --json "!LOGDIR!\RUN00.report.json" --markdown "!LOGDIR!\RUN00.report.md"
+  if exist "!LOGDIR!\RUN00.report.json" if exist "%COMPARATOR%" if exist "%RUN005_BASELINE%" (
+    "%PROJECT_PY%" "%COMPARATOR%" "!LOGDIR!\RUN00.report.json" --baseline "%RUN005_BASELINE%" --json "!LOGDIR!\RUN00.delta.json" --markdown "!LOGDIR!\RUN00.delta.md"
+  )
   if exist "%~dp0..\..\..\tools\portable_builder\prepare_variant_manifest.py" (
     "%PROJECT_PY%" "%~dp0..\..\..\tools\portable_builder\prepare_variant_manifest.py" --learn-runtime-log "!LOGDIR!\RUN00.log"
   )
 ) else (
   where py >nul 2>&1
-  if not errorlevel 1 py "%ANALYZER%" "!LOGDIR!\RUN00.log" --json "!LOGDIR!\RUN00.report.json" --markdown "!LOGDIR!\RUN00.report.md"
+  if not errorlevel 1 (
+    py "%ANALYZER%" "!LOGDIR!\RUN00.log" --json "!LOGDIR!\RUN00.report.json" --markdown "!LOGDIR!\RUN00.report.md"
+    if exist "!LOGDIR!\RUN00.report.json" if exist "%COMPARATOR%" if exist "%RUN005_BASELINE%" (
+      py "%COMPARATOR%" "!LOGDIR!\RUN00.report.json" --baseline "%RUN005_BASELINE%" --json "!LOGDIR!\RUN00.delta.json" --markdown "!LOGDIR!\RUN00.delta.md"
+    )
+  )
 )
 
 echo.
 if exist "!LOGDIR!\RUN00.report.md" (
   echo RUN gate report: "!LOGDIR!\RUN00.report.md"
+  if exist "!LOGDIR!\RUN00.delta.md" echo Historical delta: "!LOGDIR!\RUN00.delta.md"
 ) else (
   echo Runtime analyzer could not run automatically; the raw RUN00.log is preserved.
 )
@@ -644,6 +657,7 @@ exit /b %GAME_EXIT%
     $generatedManifestPath = Join-Path $ProjectRoot "dantes_inferno_manifest.toml"
     $registerPath = Join-Path $ProjectRoot "generated\default\dantes_inferno_register.cpp"
     $staticAuditPath = Join-Path $BuildDir "preservation-static.json"
+    $run005BaselinePath = Join-Path $ProjectRoot "tools\portable_builder\run005_baseline.json"
 
     $sdkPatchHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sdkPatchPath).Hash.ToLowerInvariant()
     $canonicalManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $canonicalManifestPath).Hash.ToLowerInvariant()
@@ -657,6 +671,7 @@ exit /b %GAME_EXIT%
     $staticAuditHash = if (Test-Path -LiteralPath $staticAuditPath) {
         (Get-FileHash -Algorithm SHA256 -LiteralPath $staticAuditPath).Hash.ToLowerInvariant()
     } else { $null }
+    $run005BaselineHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $run005BaselinePath).Hash.ToLowerInvariant()
     $discLanguageHash = if (Test-Path -LiteralPath $DiscLanguageReport) {
         (Get-FileHash -Algorithm SHA256 -LiteralPath $DiscLanguageReport).Hash.ToLowerInvariant()
     } else { $null }
@@ -691,6 +706,7 @@ exit /b %GAME_EXIT%
             runtime_seed_ledger_sha256 = $runtimeSeedHash
             generated_register_sha256 = $registerHash
             static_audit_sha256 = $staticAuditHash
+            historical_run005_baseline_sha256 = $run005BaselineHash
         }
         artifacts = [ordered]@{
             exe_sha256 = $exeHash
