@@ -109,6 +109,10 @@ OBSERVATION_PATTERNS = {
         re.compile(r"shader[_ -]?cache", re.I),
     ),
 }
+OPTIONAL_VIV_PROBE_RE = re.compile(
+    r"\[NtCreateFile\]\s+FAILED:.*?BIGFILE(?:[2-9]|1[0-2])\.VIV.*?0x[cC]000000[fF]",
+    re.I,
+)
 FILESYSTEM_ERROR_PATTERNS = (
     re.compile(r"NtCreateFile.*FAILED", re.I),
     re.compile(r"0xC000000F", re.I),
@@ -158,10 +162,15 @@ def observation_counts(data: str) -> dict[str, int]:
             if any(pattern.search(line) for pattern in patterns):
                 matched_lines += 1
         counts[name] = matched_lines
+    optional_viv_probe_misses = sum(
+        1 for line in data.splitlines() if OPTIONAL_VIV_PROBE_RE.search(line)
+    )
+    counts["optional_viv_probe_misses"] = optional_viv_probe_misses
     counts["filesystem_errors"] = sum(
         1
         for line in data.splitlines()
-        if any(pattern.search(line) for pattern in FILESYSTEM_ERROR_PATTERNS)
+        if not OPTIONAL_VIV_PROBE_RE.search(line)
+        and any(pattern.search(line) for pattern in FILESYSTEM_ERROR_PATTERNS)
     )
     return counts
 
@@ -453,6 +462,13 @@ def report(data: str) -> dict:
             f"FILESYSTEM: {observations['filesystem_errors']} possible "
             "file/path failure line(s) observed."
         )
+    if observations["optional_viv_probe_misses"]:
+        diagnosis.append(
+            f"FILESYSTEM INFO: {observations['optional_viv_probe_misses']} "
+            "optional BIGFILE2-12 probe miss(es) observed; the preserved retail "
+            "layout requires only bigfile0.viv and bigfile1.viv, so these are "
+            "not treated as filesystem failures."
+        )
     if baseline_contamination:
         diagnosis.append(
             "BASELINE CONTAMINATION: this run is not a clean base-campaign "
@@ -589,7 +605,7 @@ def report(data: str) -> dict:
     }
 
     return {
-        "schema": 5,
+        "schema": 6,
         "audit": "dantes-inferno-runtime-gates",
         "metrics": metrics,
         "gates": [asdict(gate) for gate in gates],
