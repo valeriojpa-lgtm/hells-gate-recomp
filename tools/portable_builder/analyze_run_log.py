@@ -117,6 +117,18 @@ FILESYSTEM_ERROR_PATTERNS = (
 
 HISTORICAL_TU2_BLACKSCREEN_TARGETS = {0x8236E3C0, 0x825D2C30}
 XEXP_SIGNATURE_RE = re.compile(r"XEX patch signature hash doesn't match", re.I)
+BASE_DLC_DISABLED_RE = re.compile(
+    r"DLC disabled for base-campaign preservation run", re.I
+)
+DLC_MUTATION_RE = re.compile(
+    r"(?:Installing DLC package|Mirrored DLC content directory|"
+    r"DLC auto-install complete:.*(?:[1-9]\d*) new packages|"
+    r"DLC auto-install complete:.*(?:[1-9]\d*) mirrored dirs)",
+    re.I,
+)
+SHADER_CACHE_SEEDED_RE = re.compile(
+    r"Seeded\s+([1-9]\d*)\s+shader cache file", re.I
+)
 
 
 @dataclass
@@ -198,6 +210,18 @@ def report(data: str) -> dict:
     access_violations = len(ACCESS_RE.findall(data))
     fatal_markers = len(FATAL_RE.findall(data))
     observations = observation_counts(data)
+
+    base_dlc_disabled = bool(BASE_DLC_DISABLED_RE.search(data))
+    dlc_mutation_lines = [
+        line for line in data.splitlines() if DLC_MUTATION_RE.search(line)
+    ]
+    shader_cache_seed_counts = [
+        int(match.group(1)) for match in SHADER_CACHE_SEEDED_RE.finditer(data)
+    ]
+    shader_cache_seeded = sum(shader_cache_seed_counts)
+    baseline_contamination = bool(
+        (base_dlc_disabled and dlc_mutation_lines) or shader_cache_seeded
+    )
 
     save_events = [
         {
@@ -330,6 +354,34 @@ def report(data: str) -> dict:
             )
         )
 
+    purity_evidence: list[str] = []
+    if base_dlc_disabled:
+        purity_evidence.append("base-campaign DLC-disabled marker observed")
+    if dlc_mutation_lines:
+        purity_evidence.extend(
+            f"DLC activity: {line.strip()}" for line in dlc_mutation_lines[:8]
+        )
+    if shader_cache_seeded:
+        purity_evidence.append(
+            f"external/bundled shader cache seeded {shader_cache_seeded} file(s)"
+        )
+    gates.append(
+        Gate(
+            "BASELINE-PURITY",
+            "FAIL" if baseline_contamination else (
+                "PASS" if base_dlc_disabled else "UNVERIFIED"
+            ),
+            (
+                "base-campaign run contains DLC/cache contamination"
+                if baseline_contamination
+                else "base-campaign DLC isolation observed"
+                if base_dlc_disabled
+                else "baseline purity marker was not observed"
+            ),
+            purity_evidence,
+        )
+    )
+
     later_gates = (
         ("GATE-4", "intro/menu"),
         ("GATE-5", "input/menu navigation"),
@@ -400,6 +452,12 @@ def report(data: str) -> dict:
         diagnosis.append(
             f"FILESYSTEM: {observations['filesystem_errors']} possible "
             "file/path failure line(s) observed."
+        )
+    if baseline_contamination:
+        diagnosis.append(
+            "BASELINE CONTAMINATION: this run is not a clean base-campaign "
+            "reference because DLC activity and/or shader-cache seeding was "
+            "observed despite the preservation baseline policy."
         )
     if legacy_swaps:
         diagnosis.append(
@@ -518,6 +576,10 @@ def report(data: str) -> dict:
         "vfetch_oob_count": vfetch_count,
         "access_violation_marker_count": access_violations,
         "fatal_assert_marker_count": fatal_markers,
+        "base_dlc_disabled_marker": base_dlc_disabled,
+        "dlc_mutation_lines": dlc_mutation_lines,
+        "shader_cache_seeded_files": shader_cache_seeded,
+        "baseline_contamination": baseline_contamination,
         "save_content_events": save_events,
         "save_content_results": save_results,
         "save_content_closes": save_closes,
@@ -527,7 +589,7 @@ def report(data: str) -> dict:
     }
 
     return {
-        "schema": 4,
+        "schema": 5,
         "audit": "dantes-inferno-runtime-gates",
         "metrics": metrics,
         "gates": [asdict(gate) for gate in gates],
