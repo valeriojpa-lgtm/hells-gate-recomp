@@ -91,6 +91,9 @@ FILESYSTEM_ERROR_PATTERNS = (
     re.compile(r"(?:file|path).*(?:not found|missing)", re.I),
 )
 
+HISTORICAL_TU2_BLACKSCREEN_TARGETS = {0x8236E3C0, 0x825D2C30}
+XEXP_SIGNATURE_RE = re.compile(r"XEX patch signature hash doesn't match", re.I)
+
 
 @dataclass
 class Gate:
@@ -311,6 +314,54 @@ def report(data: str) -> dict:
             "OBSERVED ONLY (not gate PASS): " + ", ".join(observed_names) + "."
         )
 
+    historical_matches: list[dict[str, str]] = []
+    if HISTORICAL_TU2_BLACKSCREEN_TARGETS.intersection(unresolved):
+        historical_matches.append(
+            {
+                "id": "upstream-v0.6.3-v0.6.4-tu2-black-screen",
+                "confidence": "high",
+                "reason": (
+                    "RUN hit one or both TU2 indirect targets 0x8236E3C0 / "
+                    "0x825D2C30 that upstream explicitly restored before the "
+                    "v0.6.4 black-screen fix."
+                ),
+            }
+        )
+    if XEXP_SIGNATURE_RE.search(data):
+        historical_matches.append(
+            {
+                "id": "upstream-issue-51-xexp-signature-mismatch",
+                "confidence": "high",
+                "reason": (
+                    "Log contains the same XEX/XEXP patch signature mismatch "
+                    "class reported in upstream issue #51."
+                ),
+            }
+        )
+    if access_violations and observations["save_content"]:
+        historical_matches.append(
+            {
+                "id": "upstream-save-fiber-crash-family",
+                "confidence": "medium",
+                "reason": (
+                    "Access-violation evidence occurred in a run that reached "
+                    "save/content paths; upstream v0.6.4 fixed a save/fiber "
+                    "crash family with full setjmp/longjmp restoration."
+                ),
+            }
+        )
+    if observations["video_vp6"] and observations["filesystem_errors"] == 0:
+        historical_matches.append(
+            {
+                "id": "upstream-vp6-fmv-family",
+                "confidence": "low",
+                "reason": (
+                    "VP6 paths were observed. This is only a routing hint for "
+                    "the historical FMV artifact family, not evidence of a bug."
+                ),
+            }
+        )
+
     metrics = {
         "registered_functions": max(regs) if regs else None,
         "unresolved_dispatch_total": total,
@@ -336,6 +387,7 @@ def report(data: str) -> dict:
         "metrics": metrics,
         "gates": [asdict(gate) for gate in gates],
         "diagnosis": diagnosis,
+        "historical_matches": historical_matches,
     }
 
 
@@ -368,6 +420,14 @@ def main() -> int:
 
     for line in result["diagnosis"]:
         print("DIAG:", line)
+
+    for match in result["historical_matches"]:
+        print(
+            "HIST:",
+            match["id"],
+            f"({match['confidence']})",
+            match["reason"],
+        )
 
     if args.json_path:
         output = Path(args.json_path)
@@ -407,6 +467,14 @@ def main() -> int:
         ]
         lines += ["", "## Diagnosis", ""]
         lines += [f"- {line}" for line in result["diagnosis"]]
+        lines += ["", "## Historical signature matches", ""]
+        if result["historical_matches"]:
+            lines += [
+                f"- **{match['id']}** ({match['confidence']}): {match['reason']}"
+                for match in result["historical_matches"]
+            ]
+        else:
+            lines += ["- None detected."]
         output.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     return (
