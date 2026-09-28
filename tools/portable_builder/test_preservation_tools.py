@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
 import pathlib
+import struct
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,7 @@ def load_module(name, filename):
 runlog = load_module("runlog", "analyze_run_log.py")
 manifest = load_module("manifest", "prepare_variant_manifest.py")
 audit = load_module("audit", "preservation_audit.py")
+langdet = load_module("langdet", "detect_disc_languages.py")
 
 BASE = """XEX patch applied successfully: base version: 0.0.0.1, new version: 0.0.2.1
 Q01 FIBER: cleared TU2 callback slot 0x82CE68E4
@@ -191,6 +193,51 @@ XEX patch signature hash doesn't match expected digest
         r = runlog.report(data)
         ids = {item["id"] for item in r["historical_matches"]}
         self.assertIn("upstream-issue-51-xexp-signature-mismatch", ids)
+
+class DiscLanguageTests(unittest.TestCase):
+    def test_reads_authoritative_text_languages_from_synthetic_bigh(self):
+        manifest_text = (
+            "1\n"
+            "454108CF-01\n"
+            "meta\n"
+            "default\n"
+            "3\n"
+            "2\n"
+            "en\nEnglish\n1\nEN\n"
+            "es\nSpanish\n5\nES\n"
+            "it\nItalian\n6\nIT\n"
+        ).encode("ascii")
+        with tempfile.TemporaryDirectory() as tmp:
+            game = pathlib.Path(tmp)
+            viv = game / "bigfile0.viv"
+            offset = 28
+            header = (
+                struct.pack(">I", langdet.BIG_MAGIC)
+                + struct.pack("<I", offset + len(manifest_text))
+                + struct.pack(">I", 1)
+                + struct.pack("<I", offset)
+                + struct.pack(">I", offset)
+                + struct.pack(">I", len(manifest_text))
+                + struct.pack("<I", 0)
+            )
+            viv.write_bytes(header + manifest_text)
+            result = langdet.detect_game_dir(game)
+
+        self.assertTrue(result["found"])
+        manifest = result["manifest"]
+        self.assertEqual(manifest["audio_count"], 2)
+        self.assertEqual(
+            [(x["id"], x["name"]) for x in manifest["text_languages"]],
+            [(1, "English"), (5, "Spanish"), (6, "Italian")],
+        )
+
+    def test_invalid_archive_is_nonfatal_and_not_found(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = pathlib.Path(tmp)
+            (game / "bigfile0.viv").write_bytes(b"not-a-big-archive")
+            result = langdet.detect_game_dir(game)
+        self.assertFalse(result["found"])
+
 
 class ScannerPolicyTests(unittest.TestCase):
     def test_sdk_patch_uses_data_section_scanner_not_generic_wip_scanner(self):
