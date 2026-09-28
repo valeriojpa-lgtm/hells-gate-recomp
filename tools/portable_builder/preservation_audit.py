@@ -10,6 +10,7 @@ from typing import Iterable
 TITLE_ID = "454108CF"
 MEDIA_ID = "49028C6A"
 EXPECTED_UPSTREAM_SEEDS = 339
+EXPECTED_SEED_FNV1A64 = 0xB93F1851211ACBF0
 CRITICAL_INDIRECT_TARGETS = {0x8236E3C0, 0x825D2C30}
 EXPECTED_INPUTS = {
     "default.xex": {"size": 10760192, "sha256": "abfef19fa03a247ab17d5c011e34ca70a0338f13c15b7fd8932c7ff7d9e2c2e9"},
@@ -64,6 +65,14 @@ def parse_seed_file(path: Path) -> tuple[list[int], list[str]]:
 def manifest_addresses(text: str) -> list[int]:
     return [int(m.group(1), 16) for m in MANIFEST_ENTRY_RE.finditer(text)]
 
+def seed_fingerprint(values: Iterable[int]) -> int:
+    canonical = "".join(f"0x{value:08X}\\n" for value in sorted(set(values)))
+    h = 0xCBF29CE484222325
+    for byte in canonical.encode("ascii"):
+        h ^= byte
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
 def add_check(checks: list[Check], cid: str, ok: bool, summary: str, details: Iterable[str] = ()) -> None:
     checks.append(Check(cid, "PASS" if ok else "FAIL", summary, list(details)))
 
@@ -74,13 +83,17 @@ def source_checks(root: Path) -> list[Check]:
     seed_set = set(seeds)
     duplicates = len(seeds) - len(seed_set)
     missing_critical = sorted(CRITICAL_INDIRECT_TARGETS - seed_set)
+    fingerprint = seed_fingerprint(seed_set)
+    fingerprint_ok = fingerprint == EXPECTED_SEED_FNV1A64
     add_check(checks, "SRC-SEEDS",
-        not seed_errors and len(seed_set) == EXPECTED_UPSTREAM_SEEDS and duplicates == 0 and not missing_critical,
-        f"upstream seed ledger: {len(seed_set)} unique targets",
+        not seed_errors and len(seed_set) == EXPECTED_UPSTREAM_SEEDS and duplicates == 0
+        and not missing_critical and fingerprint_ok,
+        f"upstream seed ledger: {len(seed_set)} unique targets; fingerprint=0x{fingerprint:016X}",
         [*seed_errors,
          *([f"expected {EXPECTED_UPSTREAM_SEEDS}, got {len(seed_set)}"] if len(seed_set) != EXPECTED_UPSTREAM_SEEDS else []),
          *([f"duplicates={duplicates}"] if duplicates else []),
-         *([f"missing critical: {', '.join(f'0x{x:08X}' for x in missing_critical)}"] if missing_critical else [])])
+         *([f"missing critical: {', '.join(f'0x{x:08X}' for x in missing_critical)}"] if missing_critical else []),
+         *([f"seed-set fingerprint mismatch: expected 0x{EXPECTED_SEED_FNV1A64:016X}, got 0x{fingerprint:016X}"] if not fingerprint_ok else [])])
 
     manifest_path = root / "dantes_inferno_manifest.toml"
     if manifest_path.exists():
