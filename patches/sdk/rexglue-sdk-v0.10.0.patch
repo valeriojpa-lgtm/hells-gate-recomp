@@ -1288,7 +1288,7 @@ index 19874a5..f8ec76e 100644
      REXGPU_ERROR("Failed to create the extreme-quality FXAA compute pipeline");
      return false;
    }
-@@ -1929,6 +1933,12 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
+@@ -1929,6 +1933,43 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
      return;
    }
    D3D12_RESOURCE_DESC swap_texture_desc = swap_texture_resource->GetDesc();
@@ -1298,6 +1298,37 @@ index 19874a5..f8ec76e 100644
 +      frontbuffer_width, frontbuffer_height,
 +      static_cast<void*>(swap_texture_resource),
 +      uint32_t(swap_texture_desc.Width), uint32_t(swap_texture_desc.Height));
++
++  // Q01 black-screen diagnostic: sample raw guest frontbuffer memory before
++  // the D3D12 presentation path touches it. This distinguishes "the game
++  // produced an empty frame" from "the host conversion/presenter lost it".
++  static uint32_t swap_guest_trace_count = 0;
++  if (swap_guest_trace_count < 32) {
++    const uint8_t* raw_frontbuffer =
++        memory_->TranslatePhysical<const uint8_t*>(frontbuffer_ptr);
++    if (raw_frontbuffer) {
++      constexpr uint32_t kSwapGuestSampleBytes = 64 * 1024;
++      uint64_t hash = 1469598103934665603ull;
++      uint32_t nonzero = 0;
++      for (uint32_t i = 0; i < kSwapGuestSampleBytes; ++i) {
++        const uint8_t value = raw_frontbuffer[i];
++        nonzero += value != 0;
++        hash ^= value;
++        hash *= 1099511628211ull;
++      }
++      REXGPU_DEBUG(
++          "[GPU SwapGuest] ptr=0x{:08X} bytes={} nonzero={} hash=0x{:016X} "
++          "first8={:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}",
++          frontbuffer_ptr, kSwapGuestSampleBytes, nonzero, hash,
++          raw_frontbuffer[0], raw_frontbuffer[1], raw_frontbuffer[2],
++          raw_frontbuffer[3], raw_frontbuffer[4], raw_frontbuffer[5],
++          raw_frontbuffer[6], raw_frontbuffer[7]);
++    } else {
++      REXGPU_DEBUG("[GPU SwapGuest] ptr=0x{:08X} could not be translated",
++                   frontbuffer_ptr);
++    }
++    ++swap_guest_trace_count;
++  }
    // The swap gamma / FXAA pass samples source texels by pixel index, but swap
    // textures may be allocation-padded. Prefer the active frontbuffer region
    // from the swap packet, scaled proportionally to the actual source texture.
