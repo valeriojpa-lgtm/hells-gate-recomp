@@ -12,7 +12,7 @@ $Downloads   = Join-Path $Portable "downloads"
 $Logs        = Join-Path $ProjectRoot "logs"
 $GameDir     = Join-Path $ProjectRoot "game"
 $SdkDir      = Join-Path $ProjectRoot "thirdparty\rexglue-sdk"
-$BuildDir    = Join-Path $ProjectRoot "out\build\win-amd64-release"
+$BuildDir    = Join-Path $ProjectRoot "out\q01"
 $PackageDir  = Join-Path $ProjectRoot "out\portable\Dantes_Inferno_RUN00"
 
 New-Item -ItemType Directory -Force -Path $Portable,$Downloads,$Logs | Out-Null
@@ -274,8 +274,18 @@ function Clean-Generated {
     Step "[3/7] Clean stale generated code/build output"
     $generated = Join-Path $ProjectRoot "generated\default"
     if (Test-Path $generated) { Remove-Item -Recurse -Force $generated }
-    if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
-    Write-Host "Clean baseline ready." -ForegroundColor Green
+    if (Test-Path $BuildDir) {
+        try {
+            Remove-Item -Recurse -Force -LiteralPath $BuildDir -ErrorAction Stop
+        } catch {
+            # Never let a stale Windows path block a fresh Q01 build. Rename
+            # the old tree atomically and leave it outside the active build.
+            $stale = Join-Path (Split-Path $BuildDir -Parent) ("q01_stale_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
+            Rename-Item -LiteralPath $BuildDir -NewName (Split-Path $stale -Leaf) -ErrorAction Stop
+            Write-Host "Old build tree moved aside: $stale" -ForegroundColor Yellow
+        }
+    }
+    Write-Host "Clean Q01 baseline ready." -ForegroundColor Green
 }
 
 function Run-CMake([string[]]$Arguments) {
@@ -287,18 +297,21 @@ function Build-Project {
     Step "[4/7] Configure + generate C++ from YOUR default.xex"
     Push-Location $ProjectRoot
     try {
-        Run-CMake @("--preset","win-amd64-release","-DREXSDK_DIR=thirdparty\rexglue-sdk","-DDANTESINFERNO_NATIVE_RENDERER=OFF")
-        Run-CMake @("--build","out\build\win-amd64-release","--target","dantes_inferno_codegen","--parallel")
+        # Q01 is deliberately minimal: stock Xenos/D3D12 only. Native renderer
+        # and optional FidelityFX present effects are disabled so the baseline
+        # has fewer variables and avoids FidelityFX's very deep Windows paths.
+        Run-CMake @("--preset","win-amd64-release","-B","out\q01","-DREXSDK_DIR=thirdparty\rexglue-sdk","-DDANTESINFERNO_NATIVE_RENDERER=OFF","-DDANTESINFERNO_FIDELITYFX=OFF")
+        Run-CMake @("--build","out\q01","--target","dantes_inferno_codegen","--parallel")
 
         Step "[5/7] Apply Hell's Gate generated-code fixes"
         & python "patches\generated\apply_generated_patches.py"
         if ($LASTEXITCODE -ne 0) { Fail "Generated-code patch script failed." }
 
-        Run-CMake @("--preset","win-amd64-release","-DREXSDK_DIR=thirdparty\rexglue-sdk","-DDANTESINFERNO_NATIVE_RENDERER=OFF")
+        Run-CMake @("--preset","win-amd64-release","-B","out\q01","-DREXSDK_DIR=thirdparty\rexglue-sdk","-DDANTESINFERNO_NATIVE_RENDERER=OFF","-DDANTESINFERNO_FIDELITYFX=OFF")
 
-        Step "[6/7] Compile RUN 00 (D3D12 baseline)"
-        Run-CMake @("--build","out\build\win-amd64-release","--target","dantes_inferno","--parallel")
-        Run-CMake @("--build","out\build\win-amd64-release","--target","rexgpu-xenos","--parallel")
+        Step "[6/7] Compile RUN 00 (minimal D3D12 baseline)"
+        Run-CMake @("--build","out\q01","--target","dantes_inferno","--parallel")
+        Run-CMake @("--build","out\q01","--target","rexgpu-xenos","--parallel")
     }
     finally {
         Pop-Location
