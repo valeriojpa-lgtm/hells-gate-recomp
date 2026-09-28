@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
 import pathlib
+import sys
 import unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -8,6 +9,9 @@ HERE = pathlib.Path(__file__).resolve().parent
 def load_module(name, filename):
     spec = importlib.util.spec_from_file_location(name, HERE / filename)
     module = importlib.util.module_from_spec(spec)
+    # dataclasses and other decorators resolve the defining module through
+    # sys.modules while the module body is executing.
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
