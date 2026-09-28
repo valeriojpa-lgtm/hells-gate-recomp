@@ -208,6 +208,18 @@ Seeded 3 shader cache file(s) into C:/temp/shareable
         self.assertEqual(r["metrics"]["shader_cache_seeded_files"], 3)
         self.assertTrue(any("BASELINE CONTAMINATION" in x for x in r["diagnosis"]))
 
+    def test_optional_bigfile_probes_are_not_filesystem_failures(self):
+        data = BASE + """
+[warning] [krnl] [NtCreateFile] FAILED: path='D:\\BIGFILE2.VIV' -> 0xc000000f
+[warning] [krnl] [NtCreateFile] FAILED: path='D:\\BIGFILE12.VIV' -> 0xc000000f
+[warning] [krnl] [NtCreateFile] FAILED: path='D:\\actually_required.bin' -> 0xc000000f
+"""
+        r = runlog.report(data)
+        obs = r["metrics"]["observations"]
+        self.assertEqual(obs["optional_viv_probe_misses"], 2)
+        self.assertEqual(obs["filesystem_errors"], 1)
+        self.assertTrue(any("optional BIGFILE2-12" in x for x in r["diagnosis"]))
+
     def test_xexp_signature_mismatch_is_classified(self):
         data = BASE + """
 XEX patch signature hash doesn't match expected digest
