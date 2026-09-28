@@ -314,22 +314,73 @@ function Run-CMake([string[]]$Arguments) {
 }
 
 function Build-Project {
-    Step "[4/7] Configure + generate C++ from YOUR default.xex"
+    Step "[4/7] SKU-adaptive codegen from YOUR default.xex + TU2"
     Push-Location $ProjectRoot
     try {
-        # Q01 is deliberately minimal: stock Xenos/D3D12 only. Native renderer
-        # and optional FidelityFX present effects are disabled so the baseline
-        # has fewer variables and avoids FidelityFX's very deep Windows paths.
-        Run-CMake @("--preset","win-amd64-release","-B","out\q01","-DREXSDK_DIR=thirdparty\rexglue-sdk","-DDANTESINFERNO_NATIVE_RENDERER=OFF","-DDANTESINFERNO_FIDELITYFX=OFF")
-        Run-CMake @("--build","out\q01","--target","dantes_inferno_codegen","--parallel")
+        $variantHelper = "tools\portable_builder\prepare_variant_manifest.py"
+        if (-not (Test-Path -LiteralPath $variantHelper)) {
+            Fail "Missing SKU-adaptive manifest helper: $variantHelper"
+        }
 
-        Step "[5/7] Apply Hell's Gate generated-code fixes"
+        # Start from a manifest with no guest addresses borrowed from another
+        # retail XEX. ReXGlue loads the sibling default.xexp while codegen loads
+        # game/default.xex, so discovery is performed on this exact TU2 image.
+        & python $variantHelper --reset
+        if ($LASTEXITCODE -ne 0) { Fail "Could not create SKU-adaptive manifest." }
+
+        $generated = Join-Path $ProjectRoot "generated\default"
+        $converged = $false
+        $maxPasses = 10
+
+        for ($pass = 1; $pass -le $maxPasses; $pass++) {
+            Write-Host ""
+            Write-Host "Q01 discovery pass $pass/$maxPasses" -ForegroundColor Cyan
+
+            # A changed manifest must produce a completely fresh function graph.
+            if (Test-Path -LiteralPath $generated) {
+                Remove-Item -Recurse -Force -LiteralPath $generated
+            }
+
+            Run-CMake @("--preset","win-amd64-release","-B","out\q01",
+                "-DREXSDK_DIR=thirdparty\rexglue-sdk",
+                "-DDANTESINFERNO_NATIVE_RENDERER=OFF",
+                "-DDANTESINFERNO_FIDELITYFX=OFF")
+            Run-CMake @("--build","out\q01","--target","dantes_inferno_codegen","--parallel")
+
+            $closureOutput = @(& python $variantHelper --close 2>&1)
+            $closureOutput | ForEach-Object { Write-Host $_ }
+            if ($LASTEXITCODE -ne 0) { Fail "SKU-adaptive manifest closure failed." }
+
+            $joined = [string]::Join([Environment]::NewLine, $closureOutput)
+            $match = [regex]::Match($joined, "ADDED=(\d+)")
+            if (-not $match.Success) {
+                Fail "SKU-adaptive manifest helper did not report ADDED=N."
+            }
+            $added = [int]$match.Groups[1].Value
+            if ($added -eq 0) {
+                $converged = $true
+                Write-Host "Q01 function discovery converged on pass $pass." -ForegroundColor Green
+                break
+            }
+
+            Write-Host "Discovered $added additional direct guest targets; regenerating..." -ForegroundColor Yellow
+        }
+
+        if (-not $converged) {
+            Fail "SKU-adaptive function discovery did not converge after $maxPasses passes."
+        }
+
+        Step "[5/7] Apply signature-based generated-code fixes"
         & python "patches\generated\apply_generated_patches.py"
         if ($LASTEXITCODE -ne 0) { Fail "Generated-code patch script failed." }
 
-        Run-CMake @("--preset","win-amd64-release","-B","out\q01","-DREXSDK_DIR=thirdparty\rexglue-sdk","-DDANTESINFERNO_NATIVE_RENDERER=OFF","-DDANTESINFERNO_FIDELITYFX=OFF")
+        # Reconfigure after codegen so the final source list is imported.
+        Run-CMake @("--preset","win-amd64-release","-B","out\q01",
+            "-DREXSDK_DIR=thirdparty\rexglue-sdk",
+            "-DDANTESINFERNO_NATIVE_RENDERER=OFF",
+            "-DDANTESINFERNO_FIDELITYFX=OFF")
 
-        Step "[6/7] Compile RUN 00 (minimal D3D12 baseline)"
+        Step "[6/7] Compile SKU-adaptive RUN 00"
         Run-CMake @("--build","out\q01","--target","dantes_inferno","--parallel")
         Run-CMake @("--build","out\q01","--target","rexgpu-xenos","--parallel")
     }
@@ -370,8 +421,8 @@ function Package-Run00 {
         if ($p) { Copy-Item -Force $p $PackageDir }
     }
 
-    $shaderCache = Join-Path $ProjectRoot "shader_cache"
-    if (Test-Path $shaderCache) { Copy-Item -Recurse -Force $shaderCache $PackageDir }
+    # Q01 intentionally does not seed the upstream pre-generated shader cache.
+    # A cache produced by another retail SKU can hide variant/codegen mistakes.
 
     $launch = @'
 @echo off
@@ -388,7 +439,9 @@ if not exist "%GAME%\default.xex" (
 )
 
 if not exist logs mkdir logs
-"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --gpu_backend=d3d12 --d3d12_adapter=1 --log_level=debug --log_file="%~dp0logs\RUN00.log"
+set "USERDATA=%~dp0userdata"
+if not exist "%USERDATA%" mkdir "%USERDATA%"
+"%~dp0Dante's Inferno.exe" --game_data_root="%GAME%" --user_data_root="%USERDATA%" --gpu_backend=d3d12 --d3d12_adapter=1 --log_level=debug --log_file="%~dp0logs\RUN00.log"
 exit /b %ERRORLEVEL%
 '@
     Set-Content -Encoding ASCII -LiteralPath (Join-Path $PackageDir "LAUNCH_RUN00.cmd") -Value $launch
@@ -402,7 +455,9 @@ Dante's Inferno - RUN 00 fresh local recompilation
 Source project: valeriojpa-lgtm/hells-gate-recomp
 Branch target: q01-vanilla-baseline
 ReXGlue SDK: v0.10.0 + project patch
+Codegen: SKU-adaptive discovery from this exact XEX + sibling TU2
 Renderer: D3D12 / Xenos (native renderer disabled for baseline)
+User/cache root: package-local userdata (no upstream shader-cache seed)
 RUN00 launcher: adapter 1 + debug logging for current RTX black-screen investigation
 
 Input default.xex SHA-256:  $xexHash
