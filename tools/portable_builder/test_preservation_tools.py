@@ -16,7 +16,7 @@ def load_module(name, filename):
     return module
 
 runlog = load_module("runlog", "analyze_run_log.py")
-manifest = load_module("manifest", "prepare_variant_manifest.py")
+manifest = load_module("manifest", "prepare_variant_manifest.py")\naudit = load_module("audit", "preservation_audit.py")
 
 BASE = """XEX patch applied successfully: base version: 0.0.0.1, new version: 0.0.2.1
 Q01 FIBER: cleared TU2 callback slot 0x82CE68E4
