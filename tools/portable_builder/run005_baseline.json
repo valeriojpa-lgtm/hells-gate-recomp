@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "RUN00(5)-historical-failure",
+  "description": "Sanitized technical signature of the 2026-09-28 black-screen run. Contains no local paths or game data.",
+  "metrics": {
+    "registered_functions": 36677,
+    "unresolved_dispatch_total": 51,
+    "unresolved_unique_targets": 2,
+    "unresolved_targets": {
+      "0x825D2C30": 22,
+      "0x8236E3C0": 29
+    },
+    "fiber_callback_cleared": true,
+    "vfetch_oob_count": 49,
+    "optional_viv_probe_misses": 44,
+    "filesystem_errors": 0,
+    "legacy_swapguest_samples": 25,
+    "legacy_swapguest_nonzero_samples": 0
+  },
+  "gates": {
+    "GATE-0": "PASS",
+    "GATE-2": "FAIL",
+    "GATE-3": "BLOCKED"
+  }
+}
