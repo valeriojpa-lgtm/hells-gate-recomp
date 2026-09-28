@@ -247,6 +247,41 @@ def source_checks(root: Path) -> list[Check]:
     add_check(checks, "SRC-TU2-FIBERS", fiber_ok, "TU2 fiber callback + setjmp/longjmp support preserved",
               [] if fiber_ok else ["missing TU2 callback slot or fiber helper invariant"])
 
+    essential_bindings = {
+        'keybind_a': 'Space',
+        'keybind_b': 'F',
+        'keybind_x': 'LMB',
+        'keybind_y': 'E',
+        'keybind_lstick_up': 'W',
+        'keybind_lstick_down': 'S',
+        'keybind_lstick_left': 'A',
+        'keybind_lstick_right': 'D',
+        'keybind_back': 'Tab',
+        'keybind_start': 'Escape',
+    }
+    missing_bindings = [
+        f"{name}={value}"
+        for name, value in essential_bindings.items()
+        if f'keybind_default("{name}", "{value}")' not in app
+    ]
+    input_policy_ok = (
+        'REXCVAR_SET(input_backend, std::string("sdl"))' in app
+        and 'rex::cvar::GetFlagSource(name) == rex::cvar::Source::kDefault' in app
+        and 'keybind_default("mnk_mode", "true")' in app
+        and 'keybind_default("mnk_mouse", "true")' in app
+        and not missing_bindings
+    )
+    add_check(
+        checks,
+        "SRC-INPUT",
+        input_policy_ok,
+        "SDL input + complete menu/gameplay defaults without overwriting explicit user bindings",
+        [
+            *(["input backend/default-source guard missing"] if not input_policy_ok and not missing_bindings else []),
+            *([f"missing essential bindings: {', '.join(missing_bindings)}"] if missing_bindings else []),
+        ],
+    )
+
     builder_path = tools_dir / "Build-DantePortable.ps1"
     builder = read_text(builder_path) if builder_path.exists() else ""
     builder_ok = (
@@ -256,6 +291,7 @@ def source_checks(root: Path) -> list[Check]:
         and "preservation-evidence" in builder
         and "codegen-pass-" in builder
         and "BUILD_PROVENANCE.json" in builder
+        and "--input_backend=sdl" in builder
         and "canonical_manifest_git_blob" in builder
         and 'runtime = "UNVERIFIED"' in builder
         and "RUN 00 BUILD PASS" not in builder
