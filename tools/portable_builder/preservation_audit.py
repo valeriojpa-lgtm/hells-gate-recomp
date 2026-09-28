@@ -120,9 +120,19 @@ def source_checks(root: Path) -> list[Check]:
     sdk_patch_path = root / "patches" / "sdk" / "rexglue-sdk-v0.10.0.patch"
     patch = read_text(sdk_patch_path) if sdk_patch_path.exists() else ""
     dirty_gitlink = bool(re.search(r"^\+Subproject commit .*?-dirty\s*$", patch, re.M))
+    dispatcher_override = (
+        "diff --git a/src/system/function_dispatcher.cpp "
+        "b/src/system/function_dispatcher.cpp" in patch
+    )
     trap_pos = patch.find("static void InvalidFunctionTrap")
     trap_chunk = patch[trap_pos:trap_pos + 500] if trap_pos >= 0 else ""
-    fail_fast = "REX_FATAL" in trap_chunk and "last_indirect_target" in trap_chunk
+    # Pinned ReXGlue v0.10.0 is already fail-fast. The safest preservation
+    # state is therefore no override at all; if an override is ever added, it
+    # must still contain the fatal trap explicitly.
+    fail_fast = (
+        not dispatcher_override
+        or ("REX_FATAL" in trap_chunk and "last_indirect_target" in trap_chunk)
+    )
     silent_invalid_return = (
         "Call to unresolved function at guest address" in patch
         and "(returning)" in patch
@@ -142,7 +152,7 @@ def source_checks(root: Path) -> list[Check]:
     add_check(checks, "SRC-SDK-PATCH",
         bool(patch) and not dirty_gitlink and fail_fast and not silent_invalid_return
         and data_scanner and not unsafe_scanner_enabled and graph_invariants,
-        "SDK patch: fail-fast dispatch, conservative data-section scanner, no dirty gitlinks",
+        "SDK patch preserves v0.10.0 fail-fast dispatch, conservative data-section scanner, no dirty gitlinks",
         [*(["patch contains non-reproducible 'Subproject commit ...-dirty'"] if dirty_gitlink else []),
          *(["InvalidFunctionTrap fail-fast invariant not found"] if not fail_fast else []),
          *(["silent invalid-function RETURN behavior reintroduced"] if silent_invalid_return else []),
