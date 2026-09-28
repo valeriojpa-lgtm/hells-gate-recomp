@@ -255,6 +255,9 @@ def source_checks(root: Path) -> list[Check]:
         and "analyze_run_log.py" in builder
         and "preservation-evidence" in builder
         and "codegen-pass-" in builder
+        and "BUILD_PROVENANCE.json" in builder
+        and "canonical_manifest_git_blob" in builder
+        and 'runtime = "UNVERIFIED"' in builder
         and "RUN 00 BUILD PASS" not in builder
     )
     add_check(checks, "SRC-BUILDER-POLICY", builder_ok,
