@@ -4247,7 +4247,7 @@ index 23645ef..110e310 100644
 diff --git a/src/core/logging.cpp b/src/core/logging.cpp
 --- a/src/core/logging.cpp
 +++ b/src/core/logging.cpp
-@@ -11,6 +11,7 @@
+@@ -11,7 +11,8 @@
  
  #include <algorithm>
  #include <cctype>
