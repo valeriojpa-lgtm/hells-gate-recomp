@@ -6,6 +6,12 @@ import glob
 
 RECOMP_GLOB = 'dantes_inferno_recomp.*.cpp'
 
+# Safe fallbacks only if these functions actually exist in generated output.
+# Signature detection remains primary; these names are the known base/TU2
+# implementations from the upstream v0.6.4 black-screen fix.
+KNOWN_SETJMP = ('sub_82879110', 'sub_82701240')
+KNOWN_LONGJMP = ('sub_82878CD0', 'sub_82700CE0')
+
 FUNC_START_RE = re.compile(r'DEFINE_REX_FUNC\((\w+)\) \{\n')
 
 def read(path):
@@ -54,6 +60,18 @@ def scan_generated(gen_dir):
                 setjmp_names.append(name)
             elif is_longjmp_body(body):
                 longjmp_names.append(name)
+
+    for cand in KNOWN_SETJMP:
+        if cand not in setjmp_names and any(
+                f'DEFINE_REX_FUNC({cand})' in data
+                for data in contents.values()):
+            setjmp_names.append(cand)
+    for cand in KNOWN_LONGJMP:
+        if cand not in longjmp_names and any(
+                f'DEFINE_REX_FUNC({cand})' in data
+                for data in contents.values()):
+            longjmp_names.append(cand)
+
     return files, contents, setjmp_names, longjmp_names
 
 def patch_setjmp_body(body, name):
@@ -185,9 +203,13 @@ def patch_fibers(files, contents, setjmp_names, longjmp_names):
     """Phase 1: fiber/setjmp/longjmp support."""
     print("== Phase 1: fiber/setjmp/longjmp patches ==")
     if not setjmp_names:
-        print("  WARNING: no guest setjmp function detected")
+        print("ERROR: no guest setjmp function detected; refusing broken TU2 build",
+              file=sys.stderr)
+        sys.exit(4)
     if not longjmp_names:
-        print("  WARNING: no guest longjmp function detected")
+        print("ERROR: no guest longjmp function detected; refusing broken TU2 build",
+              file=sys.stderr)
+        sys.exit(5)
     print(f"  setjmp:  {', '.join(setjmp_names) or 'none'}")
     print(f"  longjmp: {', '.join(longjmp_names) or 'none'}")
 
@@ -212,20 +234,34 @@ def patch_fibers(files, contents, setjmp_names, longjmp_names):
             contents[filepath] = content
             write(filepath, content)
 
-    total_sites = 0
+    total_setjmp_sites = 0
+    total_longjmp_sites = 0
     for filepath in files:
         content = contents[filepath]
         original = content
         for name in setjmp_names:
             content, n = patch_setjmp_call_sites(content, name, filepath)
-            total_sites += n
+            total_setjmp_sites += n
         for name in longjmp_names:
             content, n = patch_longjmp_call_sites(content, name, filepath)
+            total_longjmp_sites += n
         if content != original:
             contents[filepath] = content
             write(filepath, content)
-    if total_sites == 0 and setjmp_names:
-        print("  NOTE: no unpatched setjmp call sites (already applied)")
+
+    print(f"  fiber call sites: setjmp={total_setjmp_sites}, "
+          f"longjmp={total_longjmp_sites}")
+
+    # Fresh Q01 codegen is deleted before every run, so zero here means the
+    # essential v0.6.4 fiber fix did not actually land in generated code.
+    if total_setjmp_sites == 0:
+        print("ERROR: no setjmp call sites patched; refusing broken TU2 build",
+              file=sys.stderr)
+        sys.exit(6)
+    if not any('FiberLongjmp' in data for data in contents.values()):
+        print("ERROR: FiberLongjmp was not injected; refusing broken TU2 build",
+              file=sys.stderr)
+        sys.exit(7)
 
 def patch_unresolved(files, contents, gen_dir):
     """Phase 2: replace REX_FATAL unresolved call/branch traps."""
