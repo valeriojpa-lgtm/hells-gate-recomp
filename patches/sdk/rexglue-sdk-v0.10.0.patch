@@ -3573,19 +3573,6 @@ index 1254710..3308c40 100644
    assert_true(texture_format == rex::graphics::xenos::TextureFormat::k_8_8_8_8 ||
                texture_format == rex::graphics::xenos::TextureFormat::k_2_10_10_10_AS_16_16_16_16);
    assert_true(color_space == 0);  // RGB(0)
-diff --git a/src/system/function_dispatcher.cpp b/src/system/function_dispatcher.cpp
-index bd43109..7b2e466 100644
---- a/src/system/function_dispatcher.cpp
-+++ b/src/system/function_dispatcher.cpp
-@@ -35,8 +35,10 @@ FunctionDispatcher* GetBoundFunctionDispatcher() {
- }  // namespace
- 
- static void InvalidFunctionTrap(PPCContext& ctx, uint8_t* /*base*/) {
-   REX_FATAL("Call to invalid or unregistered function at guest address 0x{:08X}",
-             ctx.last_indirect_target);
- }
- 
- PPCFunc* ResolveIndirectFunction(uint32_t guest_address) {
 diff --git a/src/system/mmio_handler.cpp b/src/system/mmio_handler.cpp
 index 2b93005..870398a 100644
 --- a/src/system/mmio_handler.cpp
