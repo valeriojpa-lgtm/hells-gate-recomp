@@ -29,6 +29,11 @@ jobs:
             $errors | ForEach-Object { Write-Error $_.Message }
             exit 1
           }
+      - name: Verify SDK patch applies to pristine ReXGlue v0.10.0
+        shell: bash
+        run: |
+          git clone --branch v0.10.0 --depth 1 https://github.com/rexglue/rexglue-sdk.git /tmp/rexglue-sdk
+          git -C /tmp/rexglue-sdk apply --check "$GITHUB_WORKSPACE/patches/sdk/rexglue-sdk-v0.10.0.patch"
       - name: Validate source-only preservation invariants
         run: |
           python tools/portable_builder/preservation_audit.py \
