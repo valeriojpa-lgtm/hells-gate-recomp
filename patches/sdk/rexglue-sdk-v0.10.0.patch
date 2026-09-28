@@ -3393,7 +3393,7 @@ diff --git a/src/kernel/xam/xam_content.cpp b/src/kernel/xam/xam_content.cpp
 index 1fb1e16..6a1df0a 100644
 --- a/src/kernel/xam/xam_content.cpp
 +++ b/src/kernel/xam/xam_content.cpp
-@@ -129,8 +129,13 @@ u32 xeXamContentCreate(u32 user_index, mapped_string root_name, mapped_void cont
+@@ -129,7 +129,12 @@ u32 xeXamContentCreate(u32 user_index, mapped_string root_name, mapped_void cont
    } else {
      assert_always();
      return X_ERROR_INVALID_PARAMETER;
