@@ -23,6 +23,7 @@ runlog = load_module("runlog", "analyze_run_log.py")
 manifest = load_module("manifest", "prepare_variant_manifest.py")
 audit = load_module("audit", "preservation_audit.py")
 langdet = load_module("langdet", "detect_disc_languages.py")
+compare = load_module("compare", "compare_run_reports.py")
 
 BASE = """XEX patch applied successfully: base version: 0.0.0.1, new version: 0.0.2.1
 Q01 FIBER: cleared TU2 callback slot 0x82CE68E4
@@ -303,6 +304,89 @@ class DiscLanguageTests(unittest.TestCase):
             (game / "bigfile0.viv").write_bytes(b"not-a-big-archive")
             result = langdet.detect_game_dir(game)
         self.assertFalse(result["found"])
+
+
+class RunComparisonTests(unittest.TestCase):
+    def test_run005_blocker_elimination_is_major_progress(self):
+        baseline = {
+            "id": "RUN00(5)-historical-failure",
+            "metrics": {
+                "registered_functions": 36677,
+                "unresolved_dispatch_total": 51,
+                "unresolved_targets": {
+                    "0x825D2C30": 22,
+                    "0x8236E3C0": 29,
+                },
+                "fiber_callback_cleared": True,
+                "vfetch_oob_count": 49,
+            },
+            "gates": {"GATE-0": "PASS", "GATE-2": "FAIL", "GATE-3": "BLOCKED"},
+        }
+        current = {
+            "schema": 6,
+            "metrics": {
+                "registered_functions": 37000,
+                "unresolved_dispatch_total": 0,
+                "unresolved_targets": {},
+                "fiber_callback_cleared": True,
+                "vfetch_oob_count": 12,
+                "baseline_contamination": False,
+                "observations": {
+                    "optional_viv_probe_misses": 44,
+                    "filesystem_errors": 0,
+                },
+            },
+            "gates": [
+                {"id": "GATE-0", "status": "PASS"},
+                {"id": "GATE-2", "status": "PASS"},
+                {"id": "GATE-3", "status": "PASS"},
+            ],
+        }
+        result = compare.compare_reports(baseline, current)
+        texts = [item["text"] for item in result["findings"]]
+        self.assertTrue(any("GATE 2 changed from FAIL to PASS" in x for x in texts))
+        self.assertTrue(any("0x8236E3C0" in x and "eliminated" in x for x in texts))
+        self.assertTrue(any("Renderer output diagnosis is unlocked" in x for x in texts))
+
+    def test_new_unresolved_target_is_flagged_as_regression(self):
+        baseline = {
+            "id": "baseline",
+            "metrics": {
+                "unresolved_dispatch_total": 0,
+                "unresolved_targets": {},
+                "fiber_callback_cleared": True,
+                "vfetch_oob_count": 0,
+            },
+            "gates": {"GATE-2": "PASS", "GATE-3": "PASS"},
+        }
+        current = {
+            "schema": 6,
+            "metrics": {
+                "unresolved_dispatch_total": 3,
+                "unresolved_targets": {"0x82ABCDEF": 3},
+                "fiber_callback_cleared": True,
+                "vfetch_oob_count": 0,
+                "baseline_contamination": False,
+                "observations": {
+                    "optional_viv_probe_misses": 0,
+                    "filesystem_errors": 0,
+                },
+            },
+            "gates": [
+                {"id": "GATE-2", "status": "FAIL"},
+                {"id": "GATE-3", "status": "BLOCKED"},
+            ],
+        }
+        result = compare.compare_reports(baseline, current)
+        self.assertEqual(
+            result["unresolved_target_delta"]["0x82ABCDEF"]["delta"], 3
+        )
+        self.assertTrue(
+            any(
+                item["level"] == "regression" and "0x82ABCDEF" in item["text"]
+                for item in result["findings"]
+            )
+        )
 
 
 class ScannerPolicyTests(unittest.TestCase):
