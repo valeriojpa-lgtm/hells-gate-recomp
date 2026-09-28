@@ -59,7 +59,7 @@ class RepositoryPolicyTests(unittest.TestCase):
 class RuntimeGateTests(unittest.TestCase):
     def test_unresolved_blocks_framebuffer_gate(self):
         data = BASE + """
-[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=0 hash=0x1111
+[GPU GuestOutputCapture] frame=1 width=1280 height=720 stride=5120 bytes=3686400 nonzero=0 hash=0x1111
 Call to invalid or unregistered function at guest address 0x8236E3C0
 VFETCH-OOB: synthetic
 """
@@ -69,9 +69,19 @@ VFETCH-OOB: synthetic
         self.assertEqual(gate(r, "GATE-3")["status"], "BLOCKED")
         self.assertEqual(r["metrics"]["unresolved_targets"]["0x8236E3C0"], 1)
 
-    def test_zero_unresolved_zero_framebuffer_unlocks_renderer_diagnosis(self):
+    def test_early_zero_presenter_capture_is_inconclusive(self):
         data = BASE + """
-[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=0 hash=0x2222
+[GPU GuestOutputCapture] frame=1 width=1280 height=720 stride=5120 bytes=3686400 nonzero=0 hash=0x2222
+[GPU GuestOutputCapture] frame=32 width=1280 height=720 stride=5120 bytes=3686400 nonzero=0 hash=0x2222
+"""
+        r = runlog.report(data)
+        self.assertEqual(gate(r, "GATE-2")["status"], "PASS")
+        self.assertEqual(gate(r, "GATE-3")["status"], "INCONCLUSIVE")
+
+    def test_zero_presenter_output_through_horizon_fails_gate3(self):
+        data = BASE + """
+[GPU GuestOutputCapture] frame=1 width=1280 height=720 stride=5120 bytes=3686400 nonzero=0 hash=0x2222
+[GPU GuestOutputCapture] frame=512 width=1280 height=720 stride=5120 bytes=3686400 nonzero=0 hash=0x2222
 """
         r = runlog.report(data)
         self.assertEqual(gate(r, "GATE-2")["status"], "PASS")
@@ -79,11 +89,21 @@ VFETCH-OOB: synthetic
 
     def test_nonzero_framebuffer_passes_gate3(self):
         data = BASE + """
-[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=321 hash=0x3333
+[GPU GuestOutputCapture] frame=8 width=1280 height=720 stride=5120 bytes=3686400 nonzero=321 hash=0x3333
 """
         r = runlog.report(data)
         self.assertEqual(gate(r, "GATE-2")["status"], "PASS")
         self.assertEqual(gate(r, "GATE-3")["status"], "PASS")
+
+    def test_legacy_swapguest_is_not_authoritative_gate3_evidence(self):
+        data = BASE + """
+[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=900 hash=0x7777
+"""
+        r = runlog.report(data)
+        self.assertEqual(gate(r, "GATE-2")["status"], "PASS")
+        self.assertEqual(gate(r, "GATE-3")["status"], "INCONCLUSIVE")
+        self.assertEqual(r["metrics"]["legacy_swapguest_nonzero_samples"], 1)
+        self.assertTrue(any("LEGACY RENDER DIAGNOSTIC" in x for x in r["diagnosis"]))
 
     def test_no_progress_is_not_false_pass(self):
         data = """XEX patch applied successfully: base version: 0.0.0.1, new version: 0.0.2.1
@@ -110,7 +130,7 @@ XUserFindUsers(00000000, 00000000) - returning empty
 user_language=5
 DLC-MOD: synthetic
 Initializing shader storage for title 454108CF...
-[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=256 hash=0x4444
+[GPU GuestOutputCapture] frame=16 width=1280 height=720 stride=5120 bytes=3686400 nonzero=256 hash=0x4444
 """
         r = runlog.report(data)
         obs = r["metrics"]["observations"]
@@ -123,7 +143,7 @@ Initializing shader storage for title 454108CF...
 
     def test_faults_take_priority_after_gate2(self):
         data = BASE + """
-[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=300 hash=0x5555
+[GPU GuestOutputCapture] frame=32 width=1280 height=720 stride=5120 bytes=3686400 nonzero=300 hash=0x5555
 Unhandled guest access violation: read of guest 0x000001A4
 """
         r = runlog.report(data)
@@ -133,7 +153,7 @@ Unhandled guest access violation: read of guest 0x000001A4
 
     def test_historical_tu2_signature_is_classified(self):
         data = BASE + """
-[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=0 hash=0x6666
+[GPU GuestOutputCapture] frame=1 width=1280 height=720 stride=5120 bytes=3686400 nonzero=0 hash=0x6666
 Call to invalid or unregistered function at guest address 0x8236E3C0
 """
         r = runlog.report(data)
@@ -157,6 +177,9 @@ class ScannerPolicyTests(unittest.TestCase):
         self.assertIn("void dataSectionFunctionPointerScan(CodegenContext& ctx)", patch)
         self.assertIn("+  dataSectionFunctionPointerScan(ctx);", patch)
         self.assertNotRegex(patch, r"(?m)^\+\s*functionPointerScan\(ctx\);\s*$")
+        self.assertIn("[GPU GuestOutputCapture]", patch)
+        self.assertNotIn("[GPU SwapGuest]", patch)
+        self.assertIn("presenter->CaptureGuestOutput(capture)", patch)
 
 class ManifestTests(unittest.TestCase):
     def test_reset_text_preserves_canonical_function_names(self):
