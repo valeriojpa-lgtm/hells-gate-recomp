@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Test preservation tools
+        run: python -m unittest tools/portable_builder/test_preservation_tools.py -v
       - name: Validate source-only preservation invariants
         run: |
           python tools/portable_builder/preservation_audit.py \
