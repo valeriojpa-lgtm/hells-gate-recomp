@@ -564,7 +564,77 @@ exit /b %GAME_EXIT%
 
     $xexHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $GameDir "default.xex")).Hash.ToLowerInvariant()
     $xexpHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $GameDir "default.xexp")).Hash.ToLowerInvariant()
-    $exeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $PackageDir "Dante's Inferno.exe")).Hash.ToLowerInvariant()
+    $exePath = Join-Path $PackageDir "Dante's Inferno.exe"
+    $runtimePath = Join-Path $PackageDir "rexruntime.dll"
+    $gpuPath = Join-Path $PackageDir "rexgpu-xenos.dll"
+    $exeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exePath).Hash.ToLowerInvariant()
+    $runtimeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $runtimePath).Hash.ToLowerInvariant()
+    $gpuHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $gpuPath).Hash.ToLowerInvariant()
+
+    $sourceCommit = ((& git -C $ProjectRoot rev-parse HEAD) | Select-Object -First 1).Trim()
+    $sdkCommit = ((& git -C $SdkDir rev-parse HEAD) | Select-Object -First 1).Trim()
+    $sdkPatchPath = Join-Path $ProjectRoot "patches\sdk\rexglue-sdk-v0.10.0.patch"
+    $canonicalManifestPath = Join-Path $ProjectRoot "tools\portable_builder\upstream_manifest_base.toml"
+    $seedPath = Join-Path $ProjectRoot "tools\portable_builder\upstream_function_seeds.txt"
+    $runtimeSeedPath = Join-Path $ProjectRoot "tools\portable_builder\runtime_function_seeds.txt"
+    $generatedManifestPath = Join-Path $ProjectRoot "dantes_inferno_manifest.toml"
+    $registerPath = Join-Path $ProjectRoot "generated\default\dantes_inferno_register.cpp"
+    $staticAuditPath = Join-Path $BuildDir "preservation-static.json"
+
+    $sdkPatchHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sdkPatchPath).Hash.ToLowerInvariant()
+    $canonicalManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $canonicalManifestPath).Hash.ToLowerInvariant()
+    $canonicalManifestGitBlob = ((& git hash-object $canonicalManifestPath) | Select-Object -First 1).Trim()
+    $seedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $seedPath).Hash.ToLowerInvariant()
+    $runtimeSeedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $runtimeSeedPath).Hash.ToLowerInvariant()
+    $generatedManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $generatedManifestPath).Hash.ToLowerInvariant()
+    $registerHash = if (Test-Path -LiteralPath $registerPath) {
+        (Get-FileHash -Algorithm SHA256 -LiteralPath $registerPath).Hash.ToLowerInvariant()
+    } else { $null }
+    $staticAuditHash = if (Test-Path -LiteralPath $staticAuditPath) {
+        (Get-FileHash -Algorithm SHA256 -LiteralPath $staticAuditPath).Hash.ToLowerInvariant()
+    } else { $null }
+
+    $provenance = [ordered]@{
+        schema = 1
+        generated_utc = (Get-Date).ToUniversalTime().ToString("o")
+        source = [ordered]@{
+            repository = "valeriojpa-lgtm/hells-gate-recomp"
+            branch = "preservation-autofix"
+            commit = $sourceCommit
+        }
+        retail = [ordered]@{
+            title_id = "454108CF"
+            media_id = "49028C6A"
+            default_xex_sha256 = $xexHash
+            default_xexp_sha256 = $xexpHash
+        }
+        sdk = [ordered]@{
+            tag = "v0.10.0"
+            commit = $sdkCommit
+            patch_sha256 = $sdkPatchHash
+        }
+        preservation = [ordered]@{
+            canonical_manifest_git_blob = $canonicalManifestGitBlob
+            canonical_manifest_sha256 = $canonicalManifestHash
+            generated_manifest_sha256 = $generatedManifestHash
+            upstream_seed_ledger_sha256 = $seedHash
+            runtime_seed_ledger_sha256 = $runtimeSeedHash
+            generated_register_sha256 = $registerHash
+            static_audit_sha256 = $staticAuditHash
+        }
+        artifacts = [ordered]@{
+            exe_sha256 = $exeHash
+            rexruntime_sha256 = $runtimeHash
+            rexgpu_xenos_sha256 = $gpuHash
+        }
+        gates = [ordered]@{
+            build_static = "PASS"
+            runtime = "UNVERIFIED"
+        }
+    }
+    $provenance | ConvertTo-Json -Depth 8 |
+        Set-Content -Encoding UTF8 -LiteralPath (Join-Path $PackageDir "BUILD_PROVENANCE.json")
+
     $info = @"
 Dante's Inferno - RUN 00 fresh local recompilation
 
@@ -573,12 +643,19 @@ Branch target: preservation-autofix
 ReXGlue SDK: v0.10.0 + project patch
 Codegen: SKU-adaptive discovery from this exact XEX + sibling TU2
 Renderer: D3D12 / Xenos (native renderer disabled for baseline)
-User/cache root: package-local userdata (no upstream shader-cache seed)
+User/cache root: portable userdata when writable; LocalAppData fallback otherwise
 RUN00 launcher: RTX adapter 1 + official-compatible Xenos/D3D12 ROV + 60 Hz VSync + debug log
 
 Input default.xex SHA-256:  $xexHash
 Input default.xexp SHA-256: $xexpHash
 Output EXE SHA-256:         $exeHash
+Source commit:               $sourceCommit
+ReXGlue commit:              $sdkCommit
+SDK patch SHA-256:           $sdkPatchHash
+Canonical manifest blob:     $canonicalManifestGitBlob
+Generated manifest SHA-256:  $generatedManifestHash
+
+Structured provenance: BUILD_PROVENANCE.json
 
 The executable was regenerated from the user's own local Xbox 360 XEX.
 No game files are uploaded by BUILD_DANTE_PORTABLE.cmd.
