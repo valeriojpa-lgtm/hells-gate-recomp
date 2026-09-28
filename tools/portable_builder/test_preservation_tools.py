@@ -186,6 +186,28 @@ XamContentCreate: root='savegame' saved=1 type=0x1 file='DI1-ES-A' flags=0x4
         r = runlog.report(data)
         self.assertEqual(r["metrics"]["save_language_codes"], ["EN", "ES"])
 
+    def test_clean_base_campaign_marker_passes_purity_subgate(self):
+        data = BASE + """
+DLC disabled for base-campaign preservation run.
+[GPU GuestOutputCapture] frame=8 width=1280 height=720 stride=5120 bytes=3686400 nonzero=100 hash=0x9999
+"""
+        r = runlog.report(data)
+        self.assertEqual(gate(r, "BASELINE-PURITY")["status"], "PASS")
+        self.assertFalse(r["metrics"]["baseline_contamination"])
+
+    def test_dlc_or_shader_seed_contaminates_base_run(self):
+        data = BASE + """
+DLC disabled for base-campaign preservation run.
+Installing DLC package: example.dlm
+Seeded 3 shader cache file(s) into C:/temp/shareable
+[GPU GuestOutputCapture] frame=8 width=1280 height=720 stride=5120 bytes=3686400 nonzero=100 hash=0xAAAA
+"""
+        r = runlog.report(data)
+        self.assertEqual(gate(r, "BASELINE-PURITY")["status"], "FAIL")
+        self.assertTrue(r["metrics"]["baseline_contamination"])
+        self.assertEqual(r["metrics"]["shader_cache_seeded_files"], 3)
+        self.assertTrue(any("BASELINE CONTAMINATION" in x for x in r["diagnosis"]))
+
     def test_xexp_signature_mismatch_is_classified(self):
         data = BASE + """
 XEX patch signature hash doesn't match expected digest
