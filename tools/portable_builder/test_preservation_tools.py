@@ -160,6 +160,30 @@ Call to invalid or unregistered function at guest address 0x8236E3C0
         ids = {item["id"] for item in r["historical_matches"]}
         self.assertIn("upstream-v0.6.3-v0.6.4-tu2-black-screen", ids)
 
+    def test_save_language_filename_is_observed_without_promoting_gates(self):
+        data = BASE + """
+[GPU GuestOutputCapture] frame=8 width=1280 height=720 stride=5120 bytes=3686400 nonzero=100 hash=0x8888
+XamContentCreate: root='savegame' saved=1 type=0x1 file='DI1-ES-0001' flags=0x4
+XamContentCreateEx: sync result=0x0 disposition=2
+XamContentClose: root='savegame' result=0x0
+"""
+        r = runlog.report(data)
+        self.assertEqual(r["metrics"]["save_language_codes"], ["ES"])
+        self.assertEqual(r["metrics"]["savedata_files"], ["DI1-ES-0001"])
+        self.assertEqual(r["metrics"]["save_content_results"][0]["disposition"], 2)
+        self.assertEqual(gate(r, "GATE-9")["status"], "UNVERIFIED")
+        self.assertEqual(gate(r, "GATE-10")["status"], "UNVERIFIED")
+        ids = {item["id"] for item in r["historical_matches"]}
+        self.assertIn("upstream-save-language-filename-family", ids)
+
+    def test_multiple_save_language_codes_are_reported(self):
+        data = BASE + """
+XamContentCreate: root='savegame' saved=1 type=0x1 file='DI1-EN-A' flags=0x4
+XamContentCreate: root='savegame' saved=1 type=0x1 file='DI1-ES-A' flags=0x4
+"""
+        r = runlog.report(data)
+        self.assertEqual(r["metrics"]["save_language_codes"], ["EN", "ES"])
+
     def test_xexp_signature_mismatch_is_classified(self):
         data = BASE + """
 XEX patch signature hash doesn't match expected digest
@@ -180,6 +204,8 @@ class ScannerPolicyTests(unittest.TestCase):
         self.assertIn("[GPU GuestOutputCapture]", patch)
         self.assertNotIn("[GPU SwapGuest]", patch)
         self.assertIn("presenter->CaptureGuestOutput(capture)", patch)
+        self.assertIn("XamContentCreate: root='{}' saved={}", patch)
+        self.assertNotIn("NormalizeSaveFileName", patch)
 
 class ManifestTests(unittest.TestCase):
     def test_reset_text_preserves_canonical_function_names(self):
