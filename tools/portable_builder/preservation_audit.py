@@ -306,6 +306,8 @@ def source_checks(root: Path) -> list[Check]:
         and "BUILD_PROVENANCE.json" in builder
         and "--input_backend=sdl" in builder
         and "--enable_dlc=false" in builder
+        and "userdata_base" in builder
+        and "RUN00-base" in builder
         and "canonical_manifest_git_blob" in builder
         and 'runtime = "UNVERIFIED"' in builder
         and "RUN 00 BUILD PASS" not in builder
