@@ -308,6 +308,10 @@ def source_checks(root: Path) -> list[Check]:
         and "--enable_dlc=false" in builder
         and "userdata_base" in builder
         and "RUN00-base" in builder
+        and "detect_disc_languages.py" in builder
+        and "disc-languages.json" in builder
+        and "--user_language=__BASE_LANGUAGE_ID__" in builder
+        and "base_language_id" in builder
         and "canonical_manifest_git_blob" in builder
         and 'runtime = "UNVERIFIED"' in builder
         and "RUN 00 BUILD PASS" not in builder
@@ -316,6 +320,64 @@ def source_checks(root: Path) -> list[Check]:
         "builder distinguishes build/static readiness from runtime functionality",
         [] if builder_ok else ["builder must invoke gate tools and never label a merely compiled EXE as runtime PASS"])
     return checks
+
+def disc_language_checks(root: Path, required: bool) -> list[Check]:
+    report_path = root / "out" / "q01" / "disc-languages.json"
+    if not report_path.exists():
+        status = "FAIL" if required else "SKIP"
+        return [
+            Check(
+                "GATE-0-LANG",
+                status,
+                "disc language evidence unavailable",
+                [str(report_path)],
+            )
+        ]
+
+    try:
+        payload = json.loads(read_text(report_path))
+    except json.JSONDecodeError as exc:
+        return [
+            Check(
+                "GATE-0-LANG",
+                "FAIL",
+                "disc language report is invalid JSON",
+                [str(exc)],
+            )
+        ]
+
+    if not payload.get("found"):
+        return [
+            Check(
+                "GATE-0-LANG",
+                "UNVERIFIED",
+                "VIV language manifest not found; baseline falls back to English ID 1",
+                [", ".join(payload.get("archives_checked", [])) or "no VIV archives checked"],
+            )
+        ]
+
+    manifest = payload.get("manifest") or {}
+    languages = manifest.get("text_languages") or []
+    summary = ", ".join(
+        f"{entry.get('name', '?')} (ID {entry.get('id', '?')})"
+        for entry in languages
+    )
+    ids = {int(entry["id"]) for entry in languages if "id" in entry}
+    details = [
+        f"archive={manifest.get('archive', '?')}",
+        f"signature={manifest.get('signature_line', '?')}",
+        f"audio_count={manifest.get('audio_count', '?')}",
+        f"Spanish ID 5 {'present' if 5 in ids else 'absent'}",
+    ]
+    return [
+        Check(
+            "GATE-0-LANG",
+            "PASS",
+            f"authoritative VIV text languages: {summary or 'none'}",
+            details,
+        )
+    ]
+
 
 def input_checks(root: Path, required: bool) -> list[Check]:
     game, details, missing, bad = root / "game", [], [], []
@@ -413,7 +475,13 @@ def main() -> int:
     ap=argparse.ArgumentParser(); ap.add_argument("--root"); ap.add_argument("--mode", choices=("source","build"), default="source")
     ap.add_argument("--json", dest="json_path"); ap.add_argument("--markdown", dest="md_path"); args=ap.parse_args()
     root=Path(args.root).resolve() if args.root else Path(__file__).resolve().parents[2]
-    checks=source_checks(root)+input_checks(root,args.mode=="build")+generated_checks(root,args.mode=="build"); checks.append(gate2_readiness(checks))
+    checks=(
+        source_checks(root)
+        + input_checks(root, args.mode == "build")
+        + disc_language_checks(root, args.mode == "build")
+        + generated_checks(root, args.mode == "build")
+    )
+    checks.append(gate2_readiness(checks))
     for c in checks:
         print(f"[{c.status:10}] {c.id:22} {c.summary}")
         for d in c.details: print(f"             - {d}")
