@@ -123,6 +123,10 @@ def source_checks(root: Path) -> list[Check]:
     trap_pos = patch.find("static void InvalidFunctionTrap")
     trap_chunk = patch[trap_pos:trap_pos + 500] if trap_pos >= 0 else ""
     fail_fast = "REX_FATAL" in trap_chunk and "last_indirect_target" in trap_chunk
+    silent_invalid_return = (
+        "Call to unresolved function at guest address" in patch
+        and "(returning)" in patch
+    )
     data_scanner = (
         "void dataSectionFunctionPointerScan(CodegenContext& ctx)" in patch
         and "+  dataSectionFunctionPointerScan(ctx);" in patch
@@ -136,11 +140,12 @@ def source_checks(root: Path) -> list[Check]:
         and "dataSectionFunctionPointerScan" in patch
     )
     add_check(checks, "SRC-SDK-PATCH",
-        bool(patch) and not dirty_gitlink and fail_fast and data_scanner
-        and not unsafe_scanner_enabled and graph_invariants,
+        bool(patch) and not dirty_gitlink and fail_fast and not silent_invalid_return
+        and data_scanner and not unsafe_scanner_enabled and graph_invariants,
         "SDK patch: fail-fast dispatch, conservative data-section scanner, no dirty gitlinks",
         [*(["patch contains non-reproducible 'Subproject commit ...-dirty'"] if dirty_gitlink else []),
          *(["InvalidFunctionTrap fail-fast invariant not found"] if not fail_fast else []),
+         *(["silent invalid-function RETURN behavior reintroduced"] if silent_invalid_return else []),
          *(["data-section function-pointer scanner missing/incomplete"] if not data_scanner else []),
          *(["unsafe generic functionPointerScan(ctx) was enabled"] if unsafe_scanner_enabled else []),
          *(["function-graph scanner invariants not found"] if not graph_invariants else [])])
