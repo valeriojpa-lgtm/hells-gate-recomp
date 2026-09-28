@@ -345,7 +345,35 @@ function Build-Project {
                 "-DREXSDK_DIR=thirdparty\rexglue-sdk",
                 "-DDANTESINFERNO_NATIVE_RENDERER=OFF",
                 "-DDANTESINFERNO_FIDELITYFX=OFF")
-            Run-CMake @("--build","out\q01","--target","dantes_inferno_codegen","--parallel")
+            # Capture codegen output so validation failures caused by newly
+            # discovered guest branch targets can be promoted automatically.
+            # This is intentionally limited to "target not in any function";
+            # every other codegen failure remains fatal.
+            $codegenArgs = @("--build","out\q01","--target","dantes_inferno_codegen","--parallel")
+            $codegenOutput = @(& cmake @codegenArgs 2>&1)
+            $codegenExit = $LASTEXITCODE
+            $codegenOutput | ForEach-Object { Write-Host $_ }
+
+            if ($codegenExit -ne 0) {
+                $validationTargets = New-Object System.Collections.Generic.HashSet[string]
+                foreach ($line in $codegenOutput) {
+                    $s = [string]$line
+                    if ($s -match "0x([0-9A-Fa-f]{8}).*target not in any function") {
+                        [void]$validationTargets.Add($Matches[1])
+                    }
+                }
+
+                if ($validationTargets.Count -gt 0) {
+                    Write-Host "Codegen exposed $($validationTargets.Count) validation target(s); promoting them into this SKU manifest..." -ForegroundColor Yellow
+                    $helperArgs = @($variantHelper, "--add-targets") + @($validationTargets)
+                    $promoteOutput = @(& python @helperArgs 2>&1)
+                    $promoteOutput | ForEach-Object { Write-Host $_ }
+                    if ($LASTEXITCODE -ne 0) { Fail "Could not promote codegen validation targets." }
+                    continue
+                }
+
+                Fail "CMake codegen failed for a reason unrelated to adaptive target discovery."
+            }
 
             $closureOutput = @(& python $variantHelper --close 2>&1)
             $closureOutput | ForEach-Object { Write-Host $_ }
