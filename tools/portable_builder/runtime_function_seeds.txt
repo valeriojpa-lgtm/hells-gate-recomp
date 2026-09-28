@@ -1,0 +1,2 @@
+# Runtime-learned guest entrypoints.
+# Updated by LAUNCH_RUN00.cmd through prepare_variant_manifest.py.
