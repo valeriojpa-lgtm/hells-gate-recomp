@@ -19,6 +19,7 @@ jobs:
             tools/portable_builder/prepare_variant_manifest.py \
             tools/portable_builder/preservation_audit.py \
             tools/portable_builder/analyze_run_log.py \
+            tools/portable_builder/detect_disc_languages.py \
             tools/portable_builder/verify_patched_sdk.py \
             tools/portable_builder/test_preservation_tools.py \
             patches/generated/apply_generated_patches.py
