@@ -220,6 +220,38 @@ Seeded 3 shader cache file(s) into C:/temp/shareable
         self.assertEqual(obs["filesystem_errors"], 1)
         self.assertTrue(any("optional BIGFILE2-12" in x for x in r["diagnosis"]))
 
+    def test_sanitized_run005_regression_signature(self):
+        data = """XEX patch applied successfully: base version: 0.0.0.1, new version: 0.0.2.1
+Registered 36677 recompiled functions (0 duplicates, 0 rejected)
+SDL input driver initialized successfully
+XMA: Registered MMIO handlers at 0x7FEA0000-0x7FEAFFFF
+Q01 FIBER: cleared TU2 callback slot 0x82CE68E4 (old=0x00000000)
+VdSwap: format=6, color_space=0, 1280x720, tiled=1
+[GPU VP6 Swap] frontbuffer_ptr=0xA001000 format=6 dim=1280x720
+""" + (
+            "Call to unresolved function at guest address 0x825D2C30 (returning)\n" * 22
+        ) + (
+            "Call to unresolved function at guest address 0x8236E3C0 (returning)\n" * 29
+        ) + (
+            "[NtCreateFile] FAILED: path='D:\\\\BIGFILE2.VIV' -> 0xc000000f\n" * 4
+        ) + (
+            "[NtCreateFile] FAILED: path='D:\\\\BIGFILE12.VIV' -> 0xc000000f\n" * 4
+        ) + (
+            "VFETCH-OOB: synthetic historical sample\n" * 49
+        )
+        r = runlog.report(data)
+        self.assertEqual(r["metrics"]["registered_functions"], 36677)
+        self.assertEqual(r["metrics"]["unresolved_dispatch_total"], 51)
+        self.assertEqual(r["metrics"]["unresolved_targets"]["0x825D2C30"], 22)
+        self.assertEqual(r["metrics"]["unresolved_targets"]["0x8236E3C0"], 29)
+        self.assertTrue(r["metrics"]["fiber_callback_cleared"])
+        self.assertEqual(r["metrics"]["vfetch_oob_count"], 49)
+        self.assertEqual(r["metrics"]["observations"]["optional_viv_probe_misses"], 8)
+        self.assertEqual(r["metrics"]["observations"]["filesystem_errors"], 0)
+        self.assertEqual(gate(r, "GATE-0")["status"], "PASS")
+        self.assertEqual(gate(r, "GATE-2")["status"], "FAIL")
+        self.assertEqual(gate(r, "GATE-3")["status"], "BLOCKED")
+
     def test_xexp_signature_mismatch_is_classified(self):
         data = BASE + """
 XEX patch signature hash doesn't match expected digest
