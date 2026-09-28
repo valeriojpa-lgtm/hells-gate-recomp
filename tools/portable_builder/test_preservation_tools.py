@@ -99,6 +99,47 @@ Unresolved call from 0x82100000 to 0x825D2C30
         self.assertEqual(gate(r, "GATE-2")["status"], "FAIL")
         self.assertEqual(r["metrics"]["unresolved_targets"]["0x825D2C30"], 1)
 
+    def test_subsystem_observations_do_not_promote_later_gates(self):
+        data = BASE + """
+SDL input driver initialized successfully
+XMA: Registered MMIO handlers at 0x7FEA0000-0x7FEAFFFF
+[GPU VP6 Draw] synthetic
+XamContentCreateEx: sync result=0x0
+XUserFindUsers(00000000, 00000000) - returning empty
+user_language=5
+DLC-MOD: synthetic
+Initializing shader storage for title 454108CF...
+[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=256 hash=0x4444
+"""
+        r = runlog.report(data)
+        obs = r["metrics"]["observations"]
+        for name in ("input_sdl", "audio_xma", "video_vp6", "save_content",
+                     "language", "dlc", "shader"):
+            self.assertGreater(obs[name], 0)
+        self.assertEqual(gate(r, "GATE-3")["status"], "PASS")
+        for gate_id in ("GATE-5", "GATE-8", "GATE-9", "GATE-10"):
+            self.assertEqual(gate(r, gate_id)["status"], "UNVERIFIED")
+
+    def test_faults_take_priority_after_gate2(self):
+        data = BASE + """
+[GPU SwapGuest] ptr=0x1A000000 bytes=65536 nonzero=300 hash=0x5555
+Unhandled guest access violation: read of guest 0x000001A4
+"""
+        r = runlog.report(data)
+        self.assertEqual(gate(r, "GATE-2")["status"], "PASS")
+        self.assertEqual(gate(r, "GATE-3")["status"], "PASS")
+        self.assertTrue(any("runtime fault evidence" in x for x in r["diagnosis"]))
+
+class ScannerPolicyTests(unittest.TestCase):
+    def test_sdk_patch_uses_data_section_scanner_not_generic_wip_scanner(self):
+        repo_root = HERE.parents[1]
+        patch = (repo_root / "patches" / "sdk" / "rexglue-sdk-v0.10.0.patch").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        self.assertIn("void dataSectionFunctionPointerScan(CodegenContext& ctx)", patch)
+        self.assertIn("+  dataSectionFunctionPointerScan(ctx);", patch)
+        self.assertNotRegex(patch, r"(?m)^\+\s*functionPointerScan\(ctx\);\s*$")
+
 class ManifestTests(unittest.TestCase):
     def test_base_manifest_preserves_upstream_midasm_hook(self):
         self.assertIn("0x824D6B90", manifest.BASE_MANIFEST)
