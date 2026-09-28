@@ -322,9 +322,11 @@ function Build-Project {
             Fail "Missing SKU-adaptive manifest helper: $variantHelper"
         }
 
-        # Start from a manifest with no guest addresses borrowed from another
-        # retail XEX. ReXGlue loads the sibling default.xexp while codegen loads
-        # game/default.xex, so discovery is performed on this exact TU2 image.
+        # Start from a cumulative preservation manifest: keep the upstream
+        # entrypoints already proven necessary for indirect calls, then add
+        # direct targets discovered from this exact XEX/TU2. Earlier Q01 builds
+        # threw these seeds away, which produced a compiling executable with
+        # missing runtime functions and a permanently black guest framebuffer.
         & python $variantHelper --reset
         if ($LASTEXITCODE -ne 0) { Fail "Could not create SKU-adaptive manifest." }
 
@@ -408,9 +410,28 @@ function Build-Project {
             "-DDANTESINFERNO_NATIVE_RENDERER=OFF",
             "-DDANTESINFERNO_FIDELITYFX=OFF")
 
-        Step "[6/7] Compile SKU-adaptive RUN 00"
+        # The generated patcher modifies codegen output after the codegen
+        # stamp was created. Refresh the stamp so the build system doesn't run
+        # codegen again and silently overwrite the patched sources.
+        $codegenStamp = Join-Path $generated "codegen.build.stamp"
+        if (Test-Path -LiteralPath $codegenStamp) {
+            (Get-Item -LiteralPath $codegenStamp).LastWriteTime = Get-Date
+        }
+
+        Step "[6/7] Compile preservation RUN 00"
         Run-CMake @("--build","out\q01","--target","dantes_inferno","--parallel")
         Run-CMake @("--build","out\q01","--target","rexgpu-xenos","--parallel")
+
+        # Static audit: both runtime offenders from RUN00(5) are proven
+        # indirect entrypoints and must be present in generated registration.
+        foreach ($required in @("8236E3C0","825D2C30")) {
+            $hit = Get-ChildItem -LiteralPath $generated -Recurse -File |
+                Select-String -SimpleMatch $required -Quiet
+            if (-not $hit) {
+                Fail "Post-build audit: required runtime target 0x$required is absent from generated code."
+            }
+            Write-Host "PASS generated runtime target 0x$required" -ForegroundColor Green
+        }
     }
     finally {
         Pop-Location
