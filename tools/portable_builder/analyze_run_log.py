@@ -45,7 +45,8 @@ GUEST_OUTPUT_CAPTURE_FAIL_RE = re.compile(
 VDSWAP_RE = re.compile(r"\bVdSwap:.*?(\d+)x(\d+)", re.I)
 VFETCH_RE = re.compile(r"\bVFETCH-OOB\b", re.I)
 REGISTER_RE = re.compile(
-    r"\bregistered\s+([0-9][0-9,._ ]*)\s+functions\b", re.I
+    r"\bregistered\s+([0-9][0-9,._ ]*)\s+(?:recompiled\s+)?functions\b",
+    re.I,
 )
 FIBER_RE = re.compile(
     r"Q01 FIBER: cleared TU2 callback slot 0x82CE68E4", re.I
