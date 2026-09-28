@@ -1,0 +1,27 @@
+name: Preservation static audit
+
+on:
+  push:
+    branches: [preservation-autofix]
+  pull_request:
+
+jobs:
+  preservation-source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate source-only preservation invariants
+        run: |
+          python tools/portable_builder/preservation_audit.py \
+            --mode source \
+            --json preservation-static.json \
+            --markdown preservation-static.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preservation-static-audit
+          path: |
+            preservation-static.json
+            preservation-static.md
