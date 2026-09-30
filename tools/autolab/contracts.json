@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "project": "Dante Native PC AutoLab",
+  "target": "Windows x64",
+  "runtime_policy": {
+    "portable": true,
+    "requires_python": false,
+    "requires_dotnet": false,
+    "requires_visual_studio": false,
+    "loads_default_xex": false,
+    "writes_game_files": false
+  },
+  "research_state": {
+    "run00": "frozen",
+    "run01": {
+      "T01": "frozen",
+      "T02": "frozen",
+      "T03": "frozen",
+      "T04": "frozen",
+      "T05": "frozen",
+      "T06": "frozen",
+      "T07": "frozen",
+      "T08": "frozen",
+      "T09": "frozen",
+      "T10": "frozen",
+      "T11": "frozen",
+      "T12": "frozen",
+      "T13": "frozen",
+      "T14": "frozen",
+      "T15": "corrected_by_T16",
+      "T16": "frozen",
+      "T17": "frozen",
+      "T18": "frozen",
+      "T19": "corrected_by_T20",
+      "T20": "frozen",
+      "T21": "frozen",
+      "T22": "frozen",
+      "T23": "frozen",
+      "T24": "frozen",
+      "T25": "check"
+    }
+  },
+  "known_contracts": {
+    "bigh_index_base": "0x10",
+    "resource_hash": "case-folded SDBM",
+    "frontend_global_key": "0xF9E85989",
+    "refpack_magic_masked": "0x10FB",
+    "tg4_dxt_transform": "endian16=yes, untile=no",
+    "tg4_a8_transform": "raw, endian16=no, untile=no",
+    "inf_record_stride": 24,
+    "inf_atlas_coordinates": "BE16 12.4 fixed point",
+    "inf_glyph_code_location": "geometry_base-2",
+    "apx_stage": "1280x720",
+    "terms_text_instances": 14,
+    "terms_ui_api": [
+      "GetFontName",
+      "ClearLines",
+      "AddLine",
+      "SetDescription",
+      "SetButtons",
+      "InitVariables"
+    ],
+    "terms_population_boundary": "_parent.OnLoadMovieScreen(1)"
+  },
+  "next_stage": {
+    "id": "T26",
+    "goal": "Deep upstream tracing across nested ActionScript, native code, Lua, and localization resources to identify the concrete provider for terms screen text."
+  }
+}
