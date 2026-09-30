@@ -44,29 +44,26 @@ jobs:
         shell: cmd
         run: |
           call "${{ steps.msvc.outputs.vcvars }}"
-          if not exist dist mkdir dist
-          cl /nologo /O2 /GS- /Zl /c tools\autolab\DanteAutoLab.c /Fo:dist\DanteAutoLab.obj
-          link /nologo /subsystem:windows /entry:WinMainCRTStartup /nodefaultlib /machine:x64 /nxcompat /dynamicbase /highentropyva dist\DanteAutoLab.obj kernel32.lib user32.lib /out:dist\DanteAutoLab.exe
+          if not exist build-autolab mkdir build-autolab
+          if not exist package-autolab mkdir package-autolab
+          cl /nologo /O2 /GS- /Zl /c tools\autolab\DanteAutoLab.c /Fo:build-autolab\DanteAutoLab.obj
+          link /nologo /subsystem:windows /entry:WinMainCRTStartup /nodefaultlib /machine:x64 /nxcompat /dynamicbase /highentropyva build-autolab\DanteAutoLab.obj kernel32.lib user32.lib /out:package-autolab\DanteAutoLab.exe
 
-      - name: Verify executable
+      - name: Verify package
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist/DanteAutoLab.exe")) {
+          if (-not (Test-Path "package-autolab/DanteAutoLab.exe")) {
             throw "DanteAutoLab.exe was not produced."
           }
-          Get-FileHash "dist/DanteAutoLab.exe" -Algorithm SHA256 | Format-List | Out-File "dist/SHA256SUMS.txt"
-          Copy-Item "tools/autolab/README.md" "dist/README_AUTOLAB.md"
-          Copy-Item "tools/autolab/contracts.json" "dist/contracts.json"
-
-      - name: Package
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "dist/*" -DestinationPath "DanteAutoLab_Windows_x64.zip" -Force
+          $hash = (Get-FileHash "package-autolab/DanteAutoLab.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "DanteAutoLab.exe  $hash" | Out-File "package-autolab/SHA256SUMS.txt" -Encoding ascii
+          Copy-Item "tools/autolab/README.md" "package-autolab/README_AUTOLAB.md"
+          Copy-Item "tools/autolab/contracts.json" "package-autolab/contracts.json"
 
       - name: Upload portable package
         uses: actions/upload-artifact@v4
         with:
           name: DanteAutoLab-Windows-x64
-          path: DanteAutoLab_Windows_x64.zip
+          path: package-autolab/*
           if-no-files-found: error
           retention-days: 30
