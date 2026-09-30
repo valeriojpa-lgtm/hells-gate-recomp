@@ -45,6 +45,16 @@ dlc/
 game/*
 !game/.gitkeep
 !game/README.md
+bigfile*.viv
+default.xex
+default.xexp
+
+# --- Dante AutoLab local outputs (never commit) ---
+Dante_AutoLab_Result/
+Dante_AutoLab_Result.zip
+Dante_AutoLab_*.txt
+Dante_AutoLab_*.csv
+Dante_AutoLab_*.bin
 
 # --- IDE / editor ---
 .vs/
