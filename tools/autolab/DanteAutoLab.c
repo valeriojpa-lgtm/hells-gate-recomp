@@ -43,6 +43,7 @@ DLLIMPORT int WINAPI wsprintfA(LPSTR,LPCSTR,...);
 int _fltused = 0;
 
 static HANDLE g_log = 0;
+static u8 g_bigh_head[65536];
 
 static u32 slen(const char* s) {
     u32 n = 0;
@@ -71,7 +72,6 @@ static int seek_read(HANDLE f, u64 off, void* dst, u32 size) {
 
 static int inspect_bigh(const char* path, int require_frontend_global) {
     HANDLE f;
-    u8 head[65536];
     DWORD got = 0;
     LARGE_INTEGER size;
     char line[512];
@@ -87,21 +87,21 @@ static int inspect_bigh(const char* path, int require_frontend_global) {
 
     size.QuadPart = 0;
     GetFileSizeEx(f, &size);
-    if (!ReadFile(f, head, sizeof(head), &got, 0) || got < 32) {
+    if (!ReadFile(f, g_bigh_head, sizeof(g_bigh_head), &got, 0) || got < 32) {
         wsprintfA(line, "[CHECK] cannot read BIGH header: %s", path);
         log_line(line);
         CloseHandle(f);
         return 0;
     }
 
-    if (!(head[0]=='B' && head[1]=='I' && head[2]=='G' && head[3]=='H')) {
+    if (!(g_bigh_head[0]=='B' && g_bigh_head[1]=='I' && g_bigh_head[2]=='G' && g_bigh_head[3]=='H')) {
         wsprintfA(line, "[CHECK] BIGH magic missing: %s", path);
         log_line(line);
         CloseHandle(f);
         return 0;
     }
 
-    count = be32(head + 8);
+    count = be32(g_bigh_head + 8);
     need = 16 + count * 12;
     if (count == 0 || count > 10000 || need > got) {
         wsprintfA(line, "[CHECK] invalid BIGH index: %s count=%u", path, count);
@@ -115,7 +115,7 @@ static int inspect_bigh(const char* path, int require_frontend_global) {
 
     if (require_frontend_global) {
         for (i = 0; i < count; i++) {
-            const u8* e = head + 16 + i * 12;
+            const u8* e = g_bigh_head + 16 + i * 12;
             u32 key = be32(e + 8);
             if (key == 0xF9E85989U) {
                 u32 off = be32(e + 0);
