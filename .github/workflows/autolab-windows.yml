@@ -1,0 +1,72 @@
+name: Dante AutoLab Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'chatgpt/**'
+    paths:
+      - 'tools/autolab/**'
+      - '.github/workflows/autolab-windows.yml'
+  pull_request:
+    paths:
+      - 'tools/autolab/**'
+      - '.github/workflows/autolab-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-autolab:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Locate MSVC
+        id: msvc
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found on the GitHub-hosted Windows runner."
+          }
+          $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $install) {
+            throw "A Visual Studio installation with x64 C++ tools was not found."
+          }
+          $vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
+          "vcvars=$vcvars" >> $env:GITHUB_OUTPUT
+
+      - name: Build portable Win64 AutoLab
+        shell: cmd
+        run: |
+          call "${{ steps.msvc.outputs.vcvars }}"
+          if not exist dist mkdir dist
+          cl /nologo /O2 /GS- /Zl /c tools\autolab\DanteAutoLab.c /Fo:dist\DanteAutoLab.obj
+          link /nologo /subsystem:windows /entry:WinMainCRTStartup /nodefaultlib /machine:x64 /nxcompat /dynamicbase /highentropyva dist\DanteAutoLab.obj kernel32.lib user32.lib /out:dist\DanteAutoLab.exe
+
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/DanteAutoLab.exe")) {
+            throw "DanteAutoLab.exe was not produced."
+          }
+          Get-FileHash "dist/DanteAutoLab.exe" -Algorithm SHA256 | Format-List | Out-File "dist/SHA256SUMS.txt"
+          Copy-Item "tools/autolab/README.md" "dist/README_AUTOLAB.md"
+          Copy-Item "tools/autolab/contracts.json" "dist/contracts.json"
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/*" -DestinationPath "DanteAutoLab_Windows_x64.zip" -Force
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: DanteAutoLab-Windows-x64
+          path: DanteAutoLab_Windows_x64.zip
+          if-no-files-found: error
+          retention-days: 30
